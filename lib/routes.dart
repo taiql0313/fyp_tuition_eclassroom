@@ -1,0 +1,90 @@
+// lib/routes.dart
+import 'package:flutter/material.dart';
+import 'package:fyp_tuition_eclassroom/screens/auth/forget_password.dart';
+import 'package:fyp_tuition_eclassroom/screens/teacher/subject_detail.dart';
+import 'screens/auth/login_screen.dart';
+import 'screens/auth/register_screen.dart';
+import 'screens/home_screen.dart';
+import 'screens/dashboards/student_dashboard.dart';
+import 'screens/dashboards/teacher_dashboard.dart';
+import 'screens/dashboards/admin_dashboard.dart';
+import 'screens/admin/admin_user_management.dart';
+import 'screens/teacher/create_quiz.dart';
+import 'screens/teacher/create_subject.dart';
+import 'screens/teacher/classroom_dashboard.dart';
+import 'screens/teacher/create_assignment.dart';
+import 'screens/teacher/assignment_detail.dart';
+
+
+class Routes {
+  static const String login = '/';
+  static const String register = '/register';
+  static const String home = '/home';
+  static const String student = '/dashboard/student';
+  static const String teacher = '/dashboard/teacher';
+  static const String admin = '/dashboard/admin';
+  static const String adminUsers = '/admin/users';
+  static const String forgotPassword = '/forgot-password';
+  static const String createQuiz = '/create-quiz';
+  static const String createSubject = '/create-subject';
+  static const String assignmentDetail = '/assignment-detail';
+  static const String classroomDashboard = '/classroom-dashboard';
+  static const String subjectDetail = '/subject-detail';
+  static const String createAssignment = '/create-assignment';
+
+
+
+
+
+
+
+
+
+
+  static Route<dynamic> generateRoute(RouteSettings settings) {
+    switch (settings.name) {
+      case login:
+        return MaterialPageRoute(builder: (_) => const LoginScreen());
+      case register:
+        return MaterialPageRoute(builder: (_) => const RegisterScreen());
+      case home:
+        return MaterialPageRoute(builder: (_) => const HomeScreen());
+      case student:
+        return MaterialPageRoute(builder: (_) => const StudentDashboard());
+      case teacher:
+        return MaterialPageRoute(builder: (_) => const TeacherDashboard());
+      case admin:
+        return MaterialPageRoute(builder: (_) => const AdminDashboard());
+      case adminUsers:
+        return MaterialPageRoute(builder: (_) => const AdminUserManagement());
+      case assignmentDetail:
+        final args = settings.arguments as Map<String, dynamic>;
+        return MaterialPageRoute(
+          builder: (_) => TeacherAssignmentDetailPage(
+            assignmentData: args['assignmentData'],
+          ),
+        );
+      case createQuiz:
+        return MaterialPageRoute(builder: (_) => CreateQuizPage());
+      case createSubject:
+        return MaterialPageRoute(builder: (_) => CreateClassroomPage());
+      case classroomDashboard:
+        return MaterialPageRoute(builder: (_) => ClassroomDashboard());
+      case subjectDetail:
+        final args = settings.arguments as Map<String, dynamic>;
+        return MaterialPageRoute(
+          builder: (_) => SubjectDetailPage(classData: args['classData'],classId: args['classId']),
+        );
+      case createAssignment:
+        final classId = settings.arguments as String;
+        return MaterialPageRoute(
+          builder: (_) => CreateAssignmentPage(classId: classId),
+        );
+      case forgotPassword:
+        return MaterialPageRoute(builder: (_) => const ForgotPasswordScreen());
+      default:
+        return MaterialPageRoute(
+            builder: (_) => Scaffold(body: Center(child: Text('Unknown route'))));
+    }
+  }
+}

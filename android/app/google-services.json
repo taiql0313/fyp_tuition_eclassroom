@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "105420580040",
+    "project_id": "fyp-tuition-e-classroom",
+    "storage_bucket": "fyp-tuition-e-classroom.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:105420580040:android:540c3039445e3e13c671fd",
+        "android_client_info": {
+          "package_name": "com.example.fyp_tuition_eclassroom"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyCLjGJ3GU3YjS5BKALn02lKBKNfn8Hfn5U"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

@@ -1,0 +1,64 @@
+name: fyp_tuition_eclassroom
+description: "A new Flutter project."
+# The following line prevents the package from being accidentally published to
+# pub.dev using `flutter pub publish`. This is preferred for private packages.
+publish_to: 'none'
+
+version: 1.0.0+1
+
+environment:
+  # Setting minimum Dart SDK to 3.0.0 for modern Flutter compatibility
+  sdk: '>=3.0.0 <4.0.0'
+
+dependencies:
+  flutter:
+    sdk: flutter
+  http: ^1.2.0
+  flutter_markdown: ^0.6.14
+  intl: ^0.19.0
+  timeago: ^3.6.1
+  pdf: ^3.10.0
+  printing: ^5.11.0
+
+
+
+
+  # --- CORE UTILITIES ---
+  cupertino_icons: ^1.0.8
+  provider: ^6.1.2 # Global state management for AuthService
+
+  # --- FIREBASE & BACKEND (REQUIRED) ---
+  # FIXED: Using the suggested compatible version to resolve the conflict with firebase_auth ^5.0.0
+  firebase_core: ^3.15.2
+  firebase_auth: ^5.0.0
+  cloud_firestore: ^5.0.0
+  firebase_storage: ^12.0.0
+
+  # --- MODULE SPECIFIC UTILITIES (Removed for stable build) ---
+  # These were removed to ensure the build passes. You will re-add them later.
+  file_picker: ^8.0.0
+  image_picker: ^1.0.5
+  # path_provider: ^2.1.1
+  # qr_flutter: ^4.1.0
+  # qr_code_scanner: ^4.0.1
+
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+
+  flutter_lints: ^5.0.0
+
+# The following section is specific to Flutter packages.
+flutter:
+  uses-material-design: true
+
+  # To add assets to your application, add an assets section, like this:
+  # assets:
+  #   - images/
+  #
+  # To add custom fonts to your application, add a fonts section here:
+  # fonts:
+  #   - family: Roboto
+  #     fonts:
+  #       - asset: assets/fonts/Roboto-Regular.ttf
