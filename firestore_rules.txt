@@ -1,0 +1,236 @@
+rules_version = '2';
+
+service firebase.storage {
+  match /b/{bucket}/o {
+    match /{allPaths=**} {
+      allow read, write: if request.auth != null;
+    }
+  }
+}
+
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // --- HELPER FUNCTIONS ---
+    function isAdmin() {
+      return get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == "admin";
+    }
+    
+    function isTeacher() {
+      return get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == "teacher";
+    }
+    
+    function isStudent() {
+      return get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == "student";
+    }
+    
+    // --- TIMETABLES COLLECTION ---
+    match /timetables/{timetableId} {
+      // Allow all authenticated users to read (we'll filter in app)
+      allow read: if request.auth != null;
+      
+      // Teachers can create timetables
+      allow create: if request.auth != null;
+      
+      // Teachers and admins can update
+      allow update: if request.auth != null;
+      
+      // Only admins can delete
+      allow delete: if request.auth != null;
+    }
+
+    // --- TIME LOCKS COLLECTION ---
+    match /timeLocks/{lockId} {
+      // Allow all authenticated users to read (needed for conflict detection)
+      allow read: if request.auth != null;
+      
+      // Teachers can create/update/delete locks
+      allow write: if request.auth != null;
+    }
+    
+    // --- QUIZ COLLECTION ---
+    match /quizzes/{quizId} {
+      allow read: if request.auth != null;
+      allow write: if request.auth != null && isTeacher();
+    }
+    
+    // --- ASSIGNMENTS COLLECTION ---
+    match /assignments/{assignmentId} {
+  		allow read: if request.auth != null;
+  		allow create: if request.auth != null && isTeacher();
+  		allow update, delete: if request.auth != null && 
+    		resource.data.teacherId == request.auth.uid;
+}
+    
+    // --- CLASSROOMS COLLECTION ---
+    match /classrooms/{classId} {
+      allow read: if request.auth != null;
+      allow create: if request.auth != null && isTeacher();
+      allow update, delete: if request.auth != null && request.auth.uid == resource.data.teacherId;
+    }
+
+    // --- USERS COLLECTION ---
+    match /users/{uid} {
+      allow list: if request.auth != null;
+      allow get, write: if request.auth != null && (request.auth.uid == uid || isAdmin());
+    }
+
+    // --- ADMIN CONTROLS ---
+    match /admin/{doc} {
+      allow read, write: if request.auth != null && isAdmin();
+    }
+
+    // --- ANNOUNCEMENTS ---
+    match /announcements/{id} {
+      allow read: if request.auth != null;
+      allow write: if request.auth != null && isTeacher();
+    }
+
+    // --- ATTENDANCE SESSIONS COLLECTION (NEW) ---
+    match /attendance_sessions/{sessionId} {
+      // All authenticated users can read (students need to verify codes)
+      allow read: if request.auth != null;
+      
+      // Only teachers can create sessions, and must be the teacherId
+      allow create: if request.auth != null && isTeacher() && 
+        request.resource.data.teacherId == request.auth.uid;
+      
+      // Teachers can update/delete their own sessions
+      allow update, delete: if request.auth != null && isTeacher() && 
+        resource.data.teacherId == request.auth.uid;
+    }
+
+    // --- ATTENDANCE RECORDS COLLECTION (NEW) ---
+    match /attendance_records/{recordId} {
+      // All authenticated users can read
+      allow read: if request.auth != null;
+      
+      // Students can create their own attendance records (when checking in)
+      // Teachers can create records when ending sessions (marking absent students)
+      allow create: if request.auth != null && 
+        ((isStudent() && request.resource.data.studentId == request.auth.uid) ||
+         (isTeacher()));
+      
+      // Teachers and admins can update records (e.g., change status to excused when approving MC)
+      // Students can update their own records
+      allow update: if request.auth != null && 
+        (isTeacher() || isAdmin() || (isStudent() && resource.data.studentId == request.auth.uid));
+      
+      // Teachers and admins can delete
+      allow delete: if request.auth != null && (isTeacher() || isAdmin());
+    }
+
+    // --- ABSENCE DOCUMENTS COLLECTION (NEW) ---
+    match /absence_documents/{documentId} {
+      // All authenticated users can read
+      allow read: if request.auth != null;
+      
+      // Students can create their own absence documents
+      allow create: if request.auth != null && isStudent() && 
+        request.resource.data.studentId == request.auth.uid;
+      
+      // Only admins can update (approve/reject) - changed from teachers
+      // Students can update their own documents (for corrections)
+      allow update: if request.auth != null && 
+        (isAdmin() || (isStudent() && resource.data.studentId == request.auth.uid));
+      
+      // Admins and students can delete their own documents
+      allow delete: if request.auth != null && 
+        (isAdmin() || (isStudent() && resource.data.studentId == request.auth.uid));
+    }
+
+    // --- ABSENCE DOCUMENT FILES COLLECTION (Files stored as base64 in Firestore) ---
+    match /absence_document_files/{fileId} {
+      // All authenticated users can read (admins need to view files)
+      allow read: if request.auth != null;
+      
+      // Students can create their own files
+      allow create: if request.auth != null && isStudent() && 
+        request.resource.data.studentId == request.auth.uid;
+      
+      // Only admins can delete files
+      // Students can delete their own files
+      allow delete: if request.auth != null && 
+        (isAdmin() || (isStudent() && resource.data.studentId == request.auth.uid));
+      
+      // No updates allowed (files are immutable)
+      allow update: if false;
+    }
+
+    // --- ATTENDANCE (OLD STRUCTURE - KEEP FOR BACKWARD COMPATIBILITY) ---
+    match /attendance/{classId}/records/{recordId} { 
+      allow write: if request.auth != null
+                        && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == "student";
+      allow read: if request.auth != null;
+    }
+
+    // --- CHAT MESSAGES (OLD STRUCTURE - KEEP THIS) ---
+    match /chats/{chatId}/messages/{msgId} {
+      allow read, write: if request.auth != null;
+    }
+
+    // --- NEW SIMPLIFIED CHAT STRUCTURE (ADD THIS) ---
+    match /chats/{chatId} {
+      // Allow reading if user is student or teacher in this chat
+      allow read: if request.auth != null && 
+        (request.auth.uid == resource.data.studentId || 
+         request.auth.uid == resource.data.teacherId);
+      
+      // Allow creating if user is setting themselves as student or teacher
+      allow create: if request.auth != null && 
+        (request.auth.uid == request.resource.data.studentId || 
+         request.auth.uid == request.resource.data.teacherId);
+      
+      // Allow updating if user is student or teacher in this chat
+      allow update: if request.auth != null && 
+        (request.auth.uid == resource.data.studentId || 
+         request.auth.uid == resource.data.teacherId);
+    }
+
+    // --- NEW CHAT MESSAGES SUBCOLLECTION (ADD THIS) ---
+    match /chats/{chatId}/messages/{messageId} {
+      // Allow reading if user can read the parent chat
+      allow read: if request.auth != null && 
+        (request.auth.uid == get(/databases/$(database)/documents/chats/$(chatId)).data.studentId || 
+         request.auth.uid == get(/databases/$(database)/documents/chats/$(chatId)).data.teacherId);
+      
+      // Allow creating messages (users can send messages)
+      allow create: if request.auth != null;
+      
+      // Allow updating only isRead field
+      allow update: if request.auth != null && 
+        request.resource.data.keys().hasOnly(["isRead"]) && 
+        request.resource.data.isRead == true;
+    }
+
+    // --- OLD CHAT THREADS (KEEP THIS AS BACKUP) ---
+    match /chatThreads/{threadId} {
+      allow read: if request.auth != null && 
+        (request.auth.uid == resource.data.studentId || 
+         request.auth.uid == resource.data.teacherId);
+      
+      allow create: if request.auth != null && 
+        (request.auth.uid == request.resource.data.studentId || 
+         request.auth.uid == request.resource.data.teacherId);
+      
+      allow update: if request.auth != null && 
+        (request.auth.uid == resource.data.studentId || 
+         request.auth.uid == resource.data.teacherId);
+    }
+    
+    match /chatMessages/{messageId} {
+      allow read: if request.auth != null && 
+        (request.auth.uid in get(/databases/$(database)/documents/chatThreads/$(request.resource.data.threadId)).data.keys());
+      
+      allow create: if request.auth != null;
+    }
+    
+    // --- FEES & PAYMENTS ---
+    match /payments/{uid} {
+      allow read, write: if request.auth != null
+                        && request.auth.uid == uid;
+    }
+
+  }
+}
