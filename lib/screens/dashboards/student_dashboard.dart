@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:fyp_tuition_eclassroom/screens/dashboards/student_dashboard.dart';
 import 'package:provider/provider.dart';
 import 'package:intl/intl.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
@@ -303,7 +304,10 @@ class _StudentDashboardState extends State<StudentDashboard> {
                     () => Navigator.push(context, MaterialPageRoute(builder: (_) => const AttendancePage()))),
             _buildLearningTool('Payment', Icons.payment_outlined, const Color(0xFFC2185B),
                     () => Navigator.push(context, MaterialPageRoute(builder: (_) => const PaymentPage()))),
-            _buildLearningTool('Materials', Icons.library_books_outlined, const Color(0xFFE65100), () {}),
+            _buildLearningTool('Classroom', Icons.class_outlined, const Color(0xFFE65100),
+                    () => Navigator.pushNamed(context, Routes.studentClassroomDashboard)),
+            _buildLearningTool('Timetable', Icons.schedule_outlined, const Color(0xFF1976D2),
+                    () => Navigator.pushNamed(context, Routes.studentTimetable)),
           ],
         ),
         const SizedBox(height: 20),

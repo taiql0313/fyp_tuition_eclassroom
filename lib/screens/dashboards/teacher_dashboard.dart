@@ -148,6 +148,15 @@ class TeacherDashboard extends StatelessWidget {
                 ),
 
                 _teacherTile(context, 'Grading', Icons.grade_outlined, Routes.login),
+
+                // TIMETABLE TILE
+                _teacherTile(
+                  context,
+                  'Timetable',
+                  Icons.schedule_outlined,
+                  Routes.login,
+                  onTap: () => Navigator.pushNamed(context, Routes.teacherTimetable),
+                ),
               ],
             ),
           ],

@@ -14,6 +14,10 @@ import 'screens/teacher/create_subject.dart';
 import 'screens/teacher/classroom_dashboard.dart';
 import 'screens/teacher/create_assignment.dart';
 import 'screens/teacher/assignment_detail.dart';
+import 'screens/student/classroom/stu_classroom_dashboard.dart';
+import 'screens/student/classroom/join_classroom_page.dart';
+import 'screens/teacher/timetable/teacher_timetable_page.dart';
+import 'screens/student/timetable/student_timetable_page.dart';
 
 
 class Routes {
@@ -31,6 +35,12 @@ class Routes {
   static const String classroomDashboard = '/classroom-dashboard';
   static const String subjectDetail = '/subject-detail';
   static const String createAssignment = '/create-assignment';
+  static const String studentDashboard = '/student-dashboard';
+  static const String studentClassroomDashboard = '/student-classroom-dashboard';
+  static const String joinClassroom = '/join-classroom';
+  static const String teacherTimetable = '/teacher-timetable';
+  static const String studentTimetable = '/student-timetable';
+
 
 
 
@@ -57,11 +67,14 @@ class Routes {
         return MaterialPageRoute(builder: (_) => const AdminDashboard());
       case adminUsers:
         return MaterialPageRoute(builder: (_) => const AdminUserManagement());
+      case studentDashboard:
+        return MaterialPageRoute(builder: (_) => const StudentDashboard());
       case assignmentDetail:
         final args = settings.arguments as Map<String, dynamic>;
         return MaterialPageRoute(
           builder: (_) => TeacherAssignmentDetailPage(
             assignmentData: args['assignmentData'],
+            assignmentId: args['assignmentId'],
           ),
         );
       case createQuiz:
@@ -82,6 +95,14 @@ class Routes {
         );
       case forgotPassword:
         return MaterialPageRoute(builder: (_) => const ForgotPasswordScreen());
+      case studentClassroomDashboard:
+        return MaterialPageRoute(builder: (_) => const StudentClassroomDashboard());
+      case joinClassroom:
+        return MaterialPageRoute(builder: (_) => const JoinClassroomPage());
+      case teacherTimetable:
+        return MaterialPageRoute(builder: (_) => const TeacherTimetablePage());
+      case studentTimetable:
+        return MaterialPageRoute(builder: (_) => const StudentTimetablePage());
       default:
         return MaterialPageRoute(
             builder: (_) => Scaffold(body: Center(child: Text('Unknown route'))));

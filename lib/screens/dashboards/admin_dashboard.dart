@@ -1,12 +1,14 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
 import '../../routes.dart';
 import '../../services/auth_service.dart';
 
 // --- IMPORTS ---
 import '../admin/reports/reports_page.dart';
 import '../admin/admin_user_management.dart';
-import '../admin/system_log_page.dart'; // 👈 NEW IMPORT
+import '../admin/system_log_page.dart';
+import '../admin/timetable_approval_page.dart'; // 👈 NEW IMPORT
 
 class AdminDashboard extends StatelessWidget {
   const AdminDashboard({super.key});
@@ -104,6 +106,32 @@ class AdminDashboard extends StatelessWidget {
 
                     _adminTile(context, 'Settings', Icons.settings_outlined, Colors.grey),
                     _adminTile(context, 'Monitoring', Icons.speed, Colors.redAccent),
+
+                    // TIMETABLE APPROVAL TILE with badge
+                    StreamBuilder<QuerySnapshot>(
+                      stream: FirebaseFirestore.instance
+                          .collection('timetables')
+                          .where('status', isEqualTo: 'pending_approval')
+                          .snapshots(),
+                      builder: (context, snapshot) {
+                        final pendingCount = snapshot.hasData ? snapshot.data!.docs.length : 0;
+                        return _adminTileWithBadge(
+                          context,
+                          'Timetable Approval',
+                          Icons.schedule_outlined,
+                          Colors.teal,
+                          pendingCount,
+                          onTap: () {
+                            Navigator.push(
+                              context,
+                              MaterialPageRoute(
+                                builder: (_) => const TimetableApprovalPage(),
+                              ),
+                            );
+                          },
+                        );
+                      },
+                    ),
                   ],
                 ),
               ],
@@ -138,6 +166,71 @@ class AdminDashboard extends StatelessWidget {
             ),
             const SizedBox(height: 12),
             Text(title, style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 14)),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _adminTileWithBadge(
+    BuildContext c,
+    String title,
+    IconData icon,
+    Color color,
+    int badgeCount, {
+    VoidCallback? onTap,
+  }) {
+    return Material(
+      color: Colors.white,
+      elevation: 2,
+      shadowColor: Colors.grey.withOpacity(0.2),
+      borderRadius: BorderRadius.circular(16),
+      child: InkWell(
+        borderRadius: BorderRadius.circular(16),
+        onTap: onTap ?? () {
+          ScaffoldMessenger.of(c).showSnackBar(const SnackBar(content: Text("Feature Coming Soon")));
+        },
+        child: Stack(
+          children: [
+            Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Container(
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    color: color.withOpacity(0.1),
+                    shape: BoxShape.circle,
+                  ),
+                  child: Icon(icon, size: 30, color: color),
+                ),
+                const SizedBox(height: 12),
+                Text(
+                  title,
+                  style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 14),
+                  textAlign: TextAlign.center,
+                ),
+              ],
+            ),
+            if (badgeCount > 0)
+              Positioned(
+                top: 8,
+                right: 8,
+                child: Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                  decoration: BoxDecoration(
+                    color: Colors.red,
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  child: Text(
+                    badgeCount > 99 ? '99+' : '$badgeCount',
+                    style: const TextStyle(
+                      color: Colors.white,
+                      fontSize: 10,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                ),
+              ),
           ],
         ),
       ),

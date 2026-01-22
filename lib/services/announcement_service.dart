@@ -10,13 +10,19 @@ class AnnouncementService {
     required String content,
     required String type, // 'class', 'exam', 'event'
     required String authorName,
+    String? classId, // Optional: for class-specific announcements
+    String? teacherName, // Optional: teacher name
   }) async {
     await _db.collection(_col).add({
       'title': title,
       'content': content,
       'type': type,
       'author': authorName,
+      'teacherName': teacherName ?? authorName,
+      'classId': classId,
       'timestamp': FieldValue.serverTimestamp(),
+      'createdAt': FieldValue.serverTimestamp(),
+      'date': FieldValue.serverTimestamp(), // For backward compatibility
     });
   }
 

@@ -43,3 +43,17 @@ app.*.map.json
 /android/app/debug
 /android/app/profile
 /android/app/release
+
+
+# Firebase related
+.firebase/
+firebase-debug.log
+
+# Local Android secrets/paths
+**/android/local.properties
+
+# Flutter related
+.packages
+.flutter-plugins
+.generated/
+

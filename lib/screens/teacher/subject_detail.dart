@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 
 import '../../routes.dart';
+import 'create_announcement_page.dart';
 
 class SubjectDetailPage extends StatefulWidget {
   // These are the "Inputs" from the Dashboard
@@ -21,6 +22,51 @@ class SubjectDetailPage extends StatefulWidget {
 }
 
 class _SubjectDetailPageState extends State<SubjectDetailPage> {
+  String? _userRole;
+  bool _isLoadingRole = true;
+
+  @override
+  void initState() {
+    super.initState();
+    _fetchUserRole();
+  }
+
+  Future<void> _fetchUserRole() async {
+    final user = FirebaseAuth.instance.currentUser;
+    if (user != null) {
+      try {
+        final userDoc = await FirebaseFirestore.instance
+            .collection('users')
+            .doc(user.uid)
+            .get();
+        if (userDoc.exists) {
+          final userData = userDoc.data();
+          setState(() {
+            _userRole = userData?['role'] ?? 'student';
+            _isLoadingRole = false;
+          });
+        } else {
+          setState(() {
+            _userRole = 'student';
+            _isLoadingRole = false;
+          });
+        }
+      } catch (e) {
+        setState(() {
+          _userRole = 'student';
+          _isLoadingRole = false;
+        });
+      }
+    } else {
+      setState(() {
+        _userRole = 'student';
+        _isLoadingRole = false;
+      });
+    }
+  }
+
+  bool get _isTeacher => _userRole == 'teacher';
+
   @override
   Widget build(BuildContext context) {
     return DefaultTabController(
@@ -53,23 +99,26 @@ class _SubjectDetailPageState extends State<SubjectDetailPage> {
             _buildPeopleTab(),
           ],
         ),
-        floatingActionButton: FloatingActionButton(
-          onPressed: () => _showPostOptions(context),
-          backgroundColor: Colors.blue,
-          child: const Icon(Icons.add, color: Colors.white),
-        ),
+        // Only show + button for teachers / 只为教师显示 + 按钮
+        floatingActionButton: _isTeacher
+            ? FloatingActionButton(
+                onPressed: () => _showPostOptions(context),
+                backgroundColor: Colors.blue,
+                child: const Icon(Icons.add, color: Colors.white),
+              )
+            : null,
       ),
     );
   }
 
   // --- TAB 1: STREAM (Filtered for THIS specific class) ---
   Widget _buildStreamTab() {
+    // Query announcements for this class - try createdAt first, fallback to timestamp
     return StreamBuilder<QuerySnapshot>(
       // Only get announcements for THIS classId
       stream: FirebaseFirestore.instance
           .collection('announcements')
           .where('classId', isEqualTo: widget.classId)
-          .orderBy('createdAt', descending: true)
           .snapshots(),
       builder: (context, snapshot) {
         if (snapshot.connectionState == ConnectionState.waiting) {
@@ -79,30 +128,149 @@ class _SubjectDetailPageState extends State<SubjectDetailPage> {
           return _buildEmptyState("No announcements yet.", Icons.announcement_outlined);
         }
 
+        // Sort documents by date (newest first)
+        final sortedDocs = snapshot.data!.docs.toList()
+          ..sort((a, b) {
+            final aData = a.data() as Map<String, dynamic>;
+            final bData = b.data() as Map<String, dynamic>;
+            
+            Timestamp? aTime;
+            Timestamp? bTime;
+            
+            // Try to get timestamp from multiple fields
+            if (aData['createdAt'] is Timestamp) {
+              aTime = aData['createdAt'] as Timestamp;
+            } else if (aData['timestamp'] is Timestamp) {
+              aTime = aData['timestamp'] as Timestamp;
+            } else if (aData['date'] is Timestamp) {
+              aTime = aData['date'] as Timestamp;
+            }
+            
+            if (bData['createdAt'] is Timestamp) {
+              bTime = bData['createdAt'] as Timestamp;
+            } else if (bData['timestamp'] is Timestamp) {
+              bTime = bData['timestamp'] as Timestamp;
+            } else if (bData['date'] is Timestamp) {
+              bTime = bData['date'] as Timestamp;
+            }
+            
+            if (aTime == null && bTime == null) return 0;
+            if (aTime == null) return 1;
+            if (bTime == null) return -1;
+            
+            return bTime.compareTo(aTime); // Descending order
+          });
+
         return ListView.builder(
           padding: const EdgeInsets.all(16),
-          itemCount: snapshot.data!.docs.length,
-          // Inside _buildStreamTab -> ListView.builder -> itemBuilder
+          itemCount: sortedDocs.length,
           itemBuilder: (context, index) {
-            var post = snapshot.data!.docs[index].data() as Map<String, dynamic>;
+            var post = sortedDocs[index].data() as Map<String, dynamic>;
 
-            // --- ADD THIS SAFETY CHECK / 添加此安全检查 ---
+            // Format date - try multiple field names for backward compatibility
             String displayDate = "";
-            var dateValue = post['date']; // This is the 'date' field in announcements
+            Timestamp? dateValue;
+            
+            // Try 'createdAt' first, then 'timestamp', then 'date'
+            if (post['createdAt'] is Timestamp) {
+              dateValue = post['createdAt'] as Timestamp;
+            } else if (post['timestamp'] is Timestamp) {
+              dateValue = post['timestamp'] as Timestamp;
+            } else if (post['date'] is Timestamp) {
+              dateValue = post['date'] as Timestamp;
+            }
 
-            if (dateValue is Timestamp) {
+            if (dateValue != null) {
               displayDate = DateFormat('MMM d, h:mm a').format(dateValue.toDate());
             } else {
-              displayDate = dateValue?.toString() ?? "";
+              displayDate = "Just now";
+            }
+
+            // Get announcement type for styling
+            final type = post['type'] ?? 'class';
+            Color typeColor;
+            IconData typeIcon;
+            
+            switch (type) {
+              case 'exam':
+                typeColor = Colors.red;
+                typeIcon = Icons.assignment_outlined;
+                break;
+              case 'event':
+                typeColor = Colors.purple;
+                typeIcon = Icons.event_outlined;
+                break;
+              default:
+                typeColor = Colors.blue;
+                typeIcon = Icons.info_outline;
             }
 
             return Card(
               margin: const EdgeInsets.only(bottom: 12),
-              child: ListTile(
-                leading: const CircleAvatar(child: Icon(Icons.person)),
-                title: Text(post['teacherName'] ?? 'Teacher'),
-                subtitle: Text(post['content'] ?? ''),
-                trailing: Text(displayDate), // Safe now / 现在安全了
+              elevation: 2,
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(12),
+              ),
+              child: Padding(
+                padding: const EdgeInsets.all(16),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      children: [
+                        Container(
+                          padding: const EdgeInsets.all(8),
+                          decoration: BoxDecoration(
+                            color: typeColor.withOpacity(0.1),
+                            borderRadius: BorderRadius.circular(8),
+                          ),
+                          child: Icon(typeIcon, color: typeColor, size: 20),
+                        ),
+                        const SizedBox(width: 12),
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                post['title'] ?? 'No Title',
+                                style: const TextStyle(
+                                  fontSize: 16,
+                                  fontWeight: FontWeight.bold,
+                                ),
+                              ),
+                              const SizedBox(height: 4),
+                              Text(
+                                post['teacherName'] ?? post['author'] ?? 'Teacher',
+                                style: TextStyle(
+                                  fontSize: 12,
+                                  color: Colors.grey.shade600,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                        Text(
+                          displayDate,
+                          style: TextStyle(
+                            fontSize: 11,
+                            color: Colors.grey.shade500,
+                          ),
+                        ),
+                      ],
+                    ),
+                    if (post['content'] != null && post['content'].toString().isNotEmpty) ...[
+                      const SizedBox(height: 12),
+                      Text(
+                        post['content'] ?? '',
+                        style: TextStyle(
+                          fontSize: 14,
+                          color: Colors.grey.shade700,
+                          height: 1.4,
+                        ),
+                      ),
+                    ],
+                  ],
+                ),
               ),
             );
           },
@@ -133,6 +301,7 @@ class _SubjectDetailPageState extends State<SubjectDetailPage> {
         return ListView.builder(
           padding: const EdgeInsets.all(16),
           itemCount: snapshot.data!.docs.length,
+            // Inside _buildClassworkTab -> ListView.builder
             // Inside _buildClassworkTab -> ListView.builder
             // Inside _buildClassworkTab -> ListView.builder
             itemBuilder: (context, index) {
@@ -259,7 +428,307 @@ class _SubjectDetailPageState extends State<SubjectDetailPage> {
 
   // --- TAB 3: PEOPLE ---
   Widget _buildPeopleTab() {
-    return const Center(child: Text("Students List will be linked here later"));
+    return StreamBuilder<DocumentSnapshot>(
+      // First, get the classroom to find the teacher
+      stream: FirebaseFirestore.instance.collection('classrooms').doc(widget.classId).snapshots(),
+      builder: (context, classroomSnapshot) {
+        if (classroomSnapshot.connectionState == ConnectionState.waiting) {
+          return const Center(child: CircularProgressIndicator());
+        }
+
+        if (!classroomSnapshot.hasData || !classroomSnapshot.data!.exists) {
+          return _buildEmptyState("Classroom not found", Icons.error_outline);
+        }
+
+        final classroomData = classroomSnapshot.data!.data() as Map<String, dynamic>;
+        final teacherId = classroomData['teacherId'] as String? ?? '';
+        final teacherName = classroomData['teacherName'] as String? ?? 'Teacher';
+
+        // Now get all users enrolled in this class
+        return StreamBuilder<QuerySnapshot>(
+          stream: FirebaseFirestore.instance
+              .collection('users')
+              .where('classIds', arrayContains: widget.classId)
+              .snapshots(),
+          builder: (context, usersSnapshot) {
+            if (usersSnapshot.connectionState == ConnectionState.waiting) {
+              return const Center(child: CircularProgressIndicator());
+            }
+
+            final users = usersSnapshot.data?.docs ?? [];
+            
+            // Separate teacher and students
+            List<Map<String, dynamic>> teacherList = [];
+            List<Map<String, dynamic>> studentList = [];
+
+            // Find teacher from users collection to get email
+            String teacherEmail = '';
+            for (var userDoc in users) {
+              final userId = userDoc.id;
+              if (userId == teacherId) {
+                final userData = userDoc.data() as Map<String, dynamic>;
+                teacherEmail = userData['email'] ?? '';
+                break;
+              }
+            }
+
+            // If teacher not found in enrolled users, fetch from users collection
+            if (teacherEmail.isEmpty && teacherId.isNotEmpty) {
+              return FutureBuilder<DocumentSnapshot>(
+                future: FirebaseFirestore.instance.collection('users').doc(teacherId).get(),
+                builder: (context, teacherSnapshot) {
+                  if (teacherSnapshot.connectionState == ConnectionState.waiting) {
+                    return const Center(child: CircularProgressIndicator());
+                  }
+
+                  String finalTeacherEmail = '';
+                  if (teacherSnapshot.hasData && teacherSnapshot.data!.exists) {
+                    final teacherData = teacherSnapshot.data!.data() as Map<String, dynamic>?;
+                    finalTeacherEmail = teacherData?['email'] ?? '';
+                  }
+
+                  // Add teacher first
+                  teacherList.add({
+                    'uid': teacherId,
+                    'displayName': teacherName,
+                    'email': finalTeacherEmail.isNotEmpty ? finalTeacherEmail : 'teacher@example.com',
+                    'role': 'teacher',
+                  });
+
+                  // Add students
+                  for (var userDoc in users) {
+                    final userData = userDoc.data() as Map<String, dynamic>;
+                    final userId = userDoc.id;
+                    final role = userData['role'] as String? ?? 'student';
+
+                    // Skip if this is the teacher (already added)
+                    if (userId == teacherId) continue;
+
+                    // Only add students
+                    if (role == 'student') {
+                      studentList.add({
+                        'uid': userId,
+                        'displayName': userData['displayName'] ?? 'Student',
+                        'email': userData['email'] ?? '',
+                        'role': 'student',
+                      });
+                    }
+                  }
+
+
+                  return _buildMembersList(teacherList, studentList);
+                },
+              );
+            }
+
+            // Add teacher first
+            teacherList.add({
+              'uid': teacherId,
+              'displayName': teacherName,
+              'email': teacherEmail.isNotEmpty ? teacherEmail : 'teacher@example.com',
+              'role': 'teacher',
+            });
+
+            // Add students
+            for (var userDoc in users) {
+              final userData = userDoc.data() as Map<String, dynamic>;
+              final userId = userDoc.id;
+              final role = userData['role'] as String? ?? 'student';
+
+              // Skip if this is the teacher (already added)
+              if (userId == teacherId) continue;
+
+              // Only add students
+              if (role == 'student') {
+                studentList.add({
+                  'uid': userId,
+                  'displayName': userData['displayName'] ?? 'Student',
+                  'email': userData['email'] ?? '',
+                  'role': 'student',
+                });
+              }
+            }
+
+            // Add hardcoded student "Bryant" for testing
+            studentList.add({
+              'uid': 'hardcoded_bryant',
+              'displayName': 'Bryant',
+              'email': 'bryant@student.edu',
+              'role': 'student',
+            });
+
+            return _buildMembersList(teacherList, studentList);
+
+          },
+        );
+      },
+    );
+  }
+
+  Widget _buildMembersList(List<Map<String, dynamic>> teacherList, List<Map<String, dynamic>> studentList) {
+    // Combine: Teacher first, then students
+    final allMembers = [...teacherList, ...studentList];
+
+    if (allMembers.isEmpty) {
+      return _buildEmptyState("No members found", Icons.people_outline);
+    }
+
+    return Column(
+      children: [
+        // Header with search (optional)
+        Padding(
+          padding: const EdgeInsets.all(16.0),
+          child: Row(
+            children: [
+              Expanded(
+                child: Text(
+                  "Class Members (${allMembers.length})",
+                  style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+                ),
+              ),
+              IconButton(
+                icon: const Icon(Icons.search),
+                onPressed: () {
+                  // TODO: Implement search functionality
+                },
+              ),
+              // Only show add member button for teachers / 只为教师显示添加成员按钮
+              if (_isTeacher)
+                IconButton(
+                  icon: const Icon(Icons.person_add),
+                  onPressed: () {
+                    // TODO: Implement add member functionality
+                  },
+                ),
+            ],
+          ),
+        ),
+        // Members List
+        Expanded(
+          child: ListView.builder(
+            padding: const EdgeInsets.symmetric(horizontal: 16),
+            itemCount: allMembers.length,
+            itemBuilder: (context, index) {
+              final member = allMembers[index];
+              final isTeacher = member['role'] == 'teacher';
+              
+              return _buildMemberCard(
+                member['displayName'] ?? 'Unknown',
+                member['email'] ?? '',
+                isTeacher,
+              );
+            },
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildMemberCard(String name, String email, bool isTeacher) {
+    // Generate avatar color based on name
+    final colors = [
+      Colors.blue,
+      Colors.green,
+      Colors.purple,
+      Colors.orange,
+      Colors.red,
+      Colors.teal,
+      Colors.pink,
+    ];
+    final colorIndex = name.hashCode.abs() % colors.length;
+    final avatarColor = colors[colorIndex];
+
+    return Container(
+      margin: const EdgeInsets.only(bottom: 12),
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(12),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.05),
+            blurRadius: 8,
+            offset: const Offset(0, 2),
+          ),
+        ],
+      ),
+      child: Row(
+        children: [
+          // Avatar with initial
+          Stack(
+            children: [
+              CircleAvatar(
+                radius: 28,
+                backgroundColor: avatarColor,
+                child: Text(
+                  name.isNotEmpty ? name[0].toUpperCase() : '?',
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontSize: 24,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+              ),
+              // Status dot (optional - can be removed if not needed)
+              Positioned(
+                right: 0,
+                bottom: 0,
+                child: Container(
+                  width: 14,
+                  height: 14,
+                  decoration: BoxDecoration(
+                    color: Colors.green,
+                    shape: BoxShape.circle,
+                    border: Border.all(color: Colors.white, width: 2),
+                  ),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(width: 16),
+          // Name and Email
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  name,
+                  style: const TextStyle(
+                    fontSize: 16,
+                    fontWeight: FontWeight.bold,
+                    color: Colors.black87,
+                  ),
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  email,
+                  style: TextStyle(
+                    fontSize: 14,
+                    color: Colors.grey.shade600,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          // Role Badge
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+            decoration: BoxDecoration(
+              color: isTeacher ? Colors.blue.shade50 : Colors.green.shade50,
+              borderRadius: BorderRadius.circular(20),
+            ),
+            child: Text(
+              isTeacher ? 'Teacher' : 'Student',
+              style: TextStyle(
+                color: isTeacher ? Colors.blue : Colors.green,
+                fontSize: 12,
+                fontWeight: FontWeight.bold,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
   }
 
   // --- HELPER UI METHODS ---
@@ -295,7 +764,15 @@ class _SubjectDetailPageState extends State<SubjectDetailPage> {
           ListTile(
             leading: const Icon(Icons.announcement, color: Colors.green),
             title: const Text('New Announcement'),
-            onTap: () => Navigator.pop(context),
+            onTap: () {
+              Navigator.pop(context);
+              Navigator.push(
+                context,
+                MaterialPageRoute(
+                  builder: (_) => CreateAnnouncementPage(classId: widget.classId),
+                ),
+              );
+            },
           ),
           const SizedBox(height: 20),
         ],

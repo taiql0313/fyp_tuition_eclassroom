@@ -4,7 +4,9 @@ import '../../services/auth_service.dart';
 import '../../services/announcement_service.dart';
 
 class CreateAnnouncementPage extends StatefulWidget {
-  const CreateAnnouncementPage({super.key});
+  final String? classId; // Optional: for class-specific announcements
+  
+  const CreateAnnouncementPage({super.key, this.classId});
 
   @override
   State<CreateAnnouncementPage> createState() => _CreateAnnouncementPageState();
@@ -36,12 +38,15 @@ class _CreateAnnouncementPageState extends State<CreateAnnouncementPage> {
 
     final user = context.read<AuthService>().currentUser;
     final authorName = user?.displayName ?? "Teacher";
+    final teacherName = authorName; // Use same name for teacherName
 
     await _service.postAnnouncement(
       title: _title,
       content: _content,
       type: _type,
       authorName: authorName,
+      classId: widget.classId, // Pass classId if provided
+      teacherName: teacherName,
     );
 
     setState(() => _loading = false);
