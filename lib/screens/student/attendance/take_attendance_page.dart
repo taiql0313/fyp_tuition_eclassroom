@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:firebase_auth/firebase_auth.dart';
+import 'package:fyp_tuition_eclassroom/services/attendance_service.dart';
 
 class TakeAttendancePage extends StatefulWidget {
   const TakeAttendancePage({super.key});
@@ -10,6 +12,8 @@ class TakeAttendancePage extends StatefulWidget {
 
 class _TakeAttendancePageState extends State<TakeAttendancePage> {
   final TextEditingController _codeController = TextEditingController();
+  final AttendanceService _attendanceService = AttendanceService();
+  final FirebaseAuth _auth = FirebaseAuth.instance;
   bool _isLoading = false;
 
   void _submitCode() async {
@@ -20,41 +24,90 @@ class _TakeAttendancePageState extends State<TakeAttendancePage> {
       return;
     }
 
+    final user = _auth.currentUser;
+    if (user == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text("Please log in to mark attendance")),
+      );
+      return;
+    }
+
     setState(() => _isLoading = true);
 
-    // Simulate network delay for prototype
-    await Future.delayed(const Duration(seconds: 2));
+    try {
+      // Get session by code
+      final session = await _attendanceService.getSessionByCode(_codeController.text);
+      
+      if (session == null) {
+        if (!mounted) return;
+        setState(() => _isLoading = false);
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text("Invalid or expired code"),
+            backgroundColor: Colors.red,
+          ),
+        );
+        return;
+      }
 
-    if (!mounted) return;
-    setState(() => _isLoading = false);
+      // Mark attendance
+      await _attendanceService.markAttendance(
+        sessionId: session.id,
+        studentId: user.uid,
+        studentName: user.displayName ?? 'Student',
+        classId: session.classId,
+        className: session.className,
+        subject: session.subject,
+      );
 
-    // Success Mock
-    showDialog(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-        title: const Column(
-          children: [
-            Icon(Icons.check_circle, color: Colors.green, size: 60),
-            SizedBox(height: 10),
-            Text("Attendance Marked!"),
+      if (!mounted) return;
+      setState(() => _isLoading = false);
+
+      // Success Dialog
+      showDialog(
+        context: context,
+        builder: (ctx) => AlertDialog(
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+          title: const Column(
+            children: [
+              Icon(Icons.check_circle, color: Colors.green, size: 60),
+              SizedBox(height: 10),
+              Text("Attendance Marked!"),
+            ],
+          ),
+          content: Text(
+            "You have successfully checked in for:\n\n${session.subject} (${session.className})\n${session.sessionTime != null ? 'Session: ${session.sessionTime}' : ''}",
+            textAlign: TextAlign.center,
+          ),
+          actions: [
+            TextButton(
+              onPressed: () {
+                Navigator.pop(ctx); // Close dialog
+                Navigator.pop(context); // Go back to dashboard
+              },
+              child: const Text("Done", style: TextStyle(fontSize: 16)),
+            )
           ],
         ),
-        content: const Text(
-          "You have successfully checked in for:\n\nMathematics (Class 4A)\nSession: 10:00 AM - 12:00 PM",
-          textAlign: TextAlign.center,
+      );
+    } catch (e) {
+      if (!mounted) return;
+      setState(() => _isLoading = false);
+      
+      String errorMessage = "Failed to mark attendance";
+      if (e.toString().contains('already marked')) {
+        errorMessage = "You have already marked attendance for this session";
+      } else if (e.toString().contains('not logged in')) {
+        errorMessage = "Please log in to mark attendance";
+      }
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(errorMessage),
+          backgroundColor: Colors.red,
         ),
-        actions: [
-          TextButton(
-            onPressed: () {
-              Navigator.pop(ctx); // Close dialog
-              Navigator.pop(context); // Go back to dashboard
-            },
-            child: const Text("Done", style: TextStyle(fontSize: 16)),
-          )
-        ],
-      ),
-    );
+      );
+    }
   }
 
   @override

@@ -1,12 +1,79 @@
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
+import 'package:firebase_auth/firebase_auth.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:fyp_tuition_eclassroom/services/attendance_service.dart';
+import 'package:fyp_tuition_eclassroom/services/user_service.dart';
+import 'package:fyp_tuition_eclassroom/models/user_model.dart';
+import 'package:fyp_tuition_eclassroom/models/attendance_models.dart';
 
 // Import sub-pages
 import 'take_attendance_page.dart';
 import 'absence_document_page.dart';
 
-class AttendancePage extends StatelessWidget {
+class AttendancePage extends StatefulWidget {
   const AttendancePage({super.key});
+
+  @override
+  State<AttendancePage> createState() => _AttendancePageState();
+}
+
+class _AttendancePageState extends State<AttendancePage> {
+  final AttendanceService _attendanceService = AttendanceService();
+  final UserService _userService = UserService();
+  final FirebaseAuth _auth = FirebaseAuth.instance;
+  final FirebaseFirestore _db = FirebaseFirestore.instance;
+  AppUser? _currentUser;
+  String? _selectedClassId;
+  Map<String, Map<String, dynamic>> _classes = {};
+  Map<String, dynamic>? _stats;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadUserData();
+  }
+
+  Future<void> _loadUserData() async {
+    final user = _auth.currentUser;
+    if (user == null) return;
+
+    final appUser = await _userService.getUser(user.uid);
+    if (appUser == null) return;
+
+    setState(() {
+      _currentUser = appUser;
+    });
+
+    // Load class information
+    if (appUser.classIds.isNotEmpty) {
+      for (var classId in appUser.classIds) {
+        final classDoc = await _db.collection('classrooms').doc(classId).get();
+        if (classDoc.exists) {
+          setState(() {
+            _classes[classId] = classDoc.data()!;
+            if (_selectedClassId == null) {
+              _selectedClassId = classId;
+            }
+          });
+        }
+      }
+      _loadStats();
+    }
+  }
+
+  Future<void> _loadStats() async {
+    if (_selectedClassId == null || _currentUser == null) return;
+    
+    final stats = await _attendanceService.getStudentStats(
+      _currentUser!.uid,
+      _selectedClassId!,
+    );
+    
+    setState(() {
+      _stats = stats;
+    });
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -23,6 +90,36 @@ class AttendancePage extends StatelessWidget {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
+            // Class Selection (if multiple classes)
+            if (_classes.length > 1) ...[
+              DropdownButtonFormField<String>(
+                value: _selectedClassId,
+                decoration: InputDecoration(
+                  labelText: "Select Class",
+                  filled: true,
+                  fillColor: Colors.white,
+                  border: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(12),
+                    borderSide: BorderSide(color: Colors.grey.shade300),
+                  ),
+                ),
+                items: _classes.entries.map((entry) {
+                  final classData = entry.value;
+                  return DropdownMenuItem<String>(
+                    value: entry.key,
+                    child: Text("${classData['subject'] ?? ''} - ${classData['className'] ?? ''}"),
+                  );
+                }).toList(),
+                onChanged: (value) {
+                  setState(() {
+                    _selectedClassId = value;
+                  });
+                  _loadStats();
+                },
+              ),
+              const SizedBox(height: 20),
+            ],
+
             // --- 1. Summary Card ---
             Container(
               padding: const EdgeInsets.all(24),
@@ -44,17 +141,17 @@ class AttendancePage extends StatelessWidget {
               child: Row(
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
-                  const Column(
+                  Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Text(
+                      const Text(
                         "Attendance Rate",
                         style: TextStyle(color: Colors.white70, fontSize: 14),
                       ),
-                      SizedBox(height: 8),
+                      const SizedBox(height: 8),
                       Text(
-                        "92%", // Mock Data
-                        style: TextStyle(
+                        _stats != null ? "${_stats!['rate']}%" : "0%",
+                        style: const TextStyle(
                           color: Colors.white,
                           fontSize: 32,
                           fontWeight: FontWeight.bold,
@@ -68,11 +165,17 @@ class AttendancePage extends StatelessWidget {
                       color: Colors.white.withOpacity(0.2),
                       borderRadius: BorderRadius.circular(12),
                     ),
-                    child: const Column(
+                    child: Column(
                       children: [
-                        Text("Present: 24", style: TextStyle(color: Colors.white, fontSize: 12)),
-                        SizedBox(height: 4),
-                        Text("Absent: 2", style: TextStyle(color: Colors.white, fontSize: 12)),
+                        Text(
+                          "Present: ${_stats?['present'] ?? 0}",
+                          style: const TextStyle(color: Colors.white, fontSize: 12),
+                        ),
+                        const SizedBox(height: 4),
+                        Text(
+                          "Absent: ${_stats?['absent'] ?? 0}",
+                          style: const TextStyle(color: Colors.white, fontSize: 12),
+                        ),
                       ],
                     ),
                   )
@@ -121,54 +224,125 @@ class AttendancePage extends StatelessWidget {
             const Text("Recent History", style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
             const SizedBox(height: 15),
 
-            // --- 3. Mock History List ---
-            ListView.builder(
-              shrinkWrap: true,
-              physics: const NeverScrollableScrollPhysics(),
-              itemCount: 5,
-              itemBuilder: (context, index) {
-                return Container(
-                  margin: const EdgeInsets.only(bottom: 12),
-                  decoration: BoxDecoration(
-                    color: Colors.white,
-                    borderRadius: BorderRadius.circular(12),
-                    boxShadow: [
-                      BoxShadow(color: Colors.grey.withOpacity(0.05), blurRadius: 4, offset: const Offset(0, 2)),
-                    ],
-                  ),
-                  child: ListTile(
-                    leading: Container(
-                      padding: const EdgeInsets.all(8),
-                      decoration: BoxDecoration(
-                        color: index == 0 ? Colors.red.shade50 : Colors.green.shade50,
-                        borderRadius: BorderRadius.circular(8),
-                      ),
-                      child: Icon(
-                        index == 0 ? Icons.close : Icons.check,
-                        color: index == 0 ? Colors.red : Colors.green,
-                      ),
-                    ),
-                    title: Text(
-                      index == 0 ? "Absent (No Reason)" : "Present",
-                      style: const TextStyle(fontWeight: FontWeight.bold),
-                    ),
-                    subtitle: Text(
-                      DateFormat('MMM d, yyyy • h:mm a').format(DateTime.now().subtract(Duration(days: index))),
-                      style: TextStyle(color: Colors.grey[500], fontSize: 12),
-                    ),
-                    trailing: index == 0
-                        ? TextButton(
-                      onPressed: () => Navigator.push(
-                        context,
-                        MaterialPageRoute(builder: (_) => const AbsenceDocumentPage()),
-                      ),
-                      child: const Text("Upload MC"),
-                    )
-                        : null,
-                  ),
-                );
-              },
-            ),
+            // --- 3. Real History List from Firebase ---
+            _currentUser != null
+                ? StreamBuilder<List<AttendanceRecord>>(
+                    stream: _attendanceService.streamStudentRecords(_currentUser!.uid),
+                    builder: (context, snapshot) {
+                      if (snapshot.connectionState == ConnectionState.waiting) {
+                        return const Center(child: CircularProgressIndicator());
+                      }
+
+                      if (!snapshot.hasData || snapshot.data!.isEmpty) {
+                        return const Center(
+                          child: Padding(
+                            padding: EdgeInsets.all(20.0),
+                            child: Text("No attendance records yet"),
+                          ),
+                        );
+                      }
+
+                      final records = snapshot.data!;
+                      // Filter by selected class if applicable
+                      final filteredRecords = _selectedClassId != null
+                          ? records.where((r) => r.classId == _selectedClassId).toList()
+                          : records;
+
+                      if (filteredRecords.isEmpty) {
+                        return const Center(
+                          child: Padding(
+                            padding: EdgeInsets.all(20.0),
+                            child: Text("No attendance records for this class"),
+                          ),
+                        );
+                      }
+
+                      return ListView.builder(
+                        shrinkWrap: true,
+                        physics: const NeverScrollableScrollPhysics(),
+                        itemCount: filteredRecords.length > 10 ? 10 : filteredRecords.length,
+                        itemBuilder: (context, index) {
+                          final record = filteredRecords[index];
+                          final isAbsent = record.status == 'absent';
+                          final isExcused = record.status == 'excused';
+
+                          return Container(
+                            margin: const EdgeInsets.only(bottom: 12),
+                            decoration: BoxDecoration(
+                              color: Colors.white,
+                              borderRadius: BorderRadius.circular(12),
+                              boxShadow: [
+                                BoxShadow(
+                                  color: Colors.grey.withOpacity(0.05),
+                                  blurRadius: 4,
+                                  offset: const Offset(0, 2),
+                                ),
+                              ],
+                            ),
+                            child: ListTile(
+                              leading: Container(
+                                padding: const EdgeInsets.all(8),
+                                decoration: BoxDecoration(
+                                  color: isAbsent
+                                      ? Colors.red.shade50
+                                      : isExcused
+                                          ? Colors.orange.shade50
+                                          : Colors.green.shade50,
+                                  borderRadius: BorderRadius.circular(8),
+                                ),
+                                child: Icon(
+                                  isAbsent
+                                      ? Icons.close
+                                      : isExcused
+                                          ? Icons.info
+                                          : Icons.check,
+                                  color: isAbsent
+                                      ? Colors.red
+                                      : isExcused
+                                          ? Colors.orange
+                                          : Colors.green,
+                                ),
+                              ),
+                              title: Text(
+                                isAbsent
+                                    ? "Absent (No Reason)"
+                                    : isExcused
+                                        ? "Excused Absence"
+                                        : "Present",
+                                style: const TextStyle(fontWeight: FontWeight.bold),
+                              ),
+                              subtitle: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text(
+                                    "${record.subject} - ${record.className}",
+                                    style: const TextStyle(fontSize: 12),
+                                  ),
+                                  const SizedBox(height: 2),
+                                  Text(
+                                    DateFormat('MMM d, yyyy • h:mm a').format(record.timestamp),
+                                    style: TextStyle(color: Colors.grey[500], fontSize: 12),
+                                  ),
+                                ],
+                              ),
+                              trailing: isAbsent
+                                  ? TextButton(
+                                      onPressed: () => Navigator.push(
+                                        context,
+                                        MaterialPageRoute(
+                                          builder: (_) => const AbsenceDocumentPage(),
+                                        ),
+                                      ),
+                                      child: const Text("Upload MC"),
+                                    )
+                                  : null,
+                            ),
+                          );
+                        },
+                      );
+                    },
+                  )
+                : const Center(child: CircularProgressIndicator()),
           ],
         ),
       ),

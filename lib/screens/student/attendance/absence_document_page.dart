@@ -1,5 +1,12 @@
+import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
+import 'package:file_picker/file_picker.dart';
+import 'package:firebase_auth/firebase_auth.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:fyp_tuition_eclassroom/services/attendance_service.dart';
+import 'package:fyp_tuition_eclassroom/services/user_service.dart';
+import 'package:fyp_tuition_eclassroom/models/user_model.dart';
 
 class AbsenceDocumentPage extends StatefulWidget {
   const AbsenceDocumentPage({super.key});
@@ -11,9 +18,48 @@ class AbsenceDocumentPage extends StatefulWidget {
 class _AbsenceDocumentPageState extends State<AbsenceDocumentPage> {
   final _dateController = TextEditingController();
   final _reasonController = TextEditingController();
-  bool _isFileSelected = false; // Mock state for file selection
+  final AttendanceService _attendanceService = AttendanceService();
+  final UserService _userService = UserService();
+  final FirebaseAuth _auth = FirebaseAuth.instance;
+  final FirebaseFirestore _db = FirebaseFirestore.instance;
+  
+  File? _selectedFile;
+  bool _isFileSelected = false;
   String _fileName = "";
-  DateTimeRange? _selectedDateRange; // Store the actual range object
+  DateTimeRange? _selectedDateRange;
+  bool _isLoading = false;
+  Map<String, Map<String, dynamic>> _classes = {}; // classId -> classData
+  AppUser? _currentUser;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadUserData();
+  }
+
+  Future<void> _loadUserData() async {
+    final user = _auth.currentUser;
+    if (user == null) return;
+
+    final appUser = await _userService.getUser(user.uid);
+    if (appUser == null) return;
+
+    setState(() {
+      _currentUser = appUser;
+    });
+
+    // Load class information
+    if (appUser.classIds.isNotEmpty) {
+      for (var classId in appUser.classIds) {
+        final classDoc = await _db.collection('classrooms').doc(classId).get();
+        if (classDoc.exists) {
+          setState(() {
+            _classes[classId] = classDoc.data()!;
+          });
+        }
+      }
+    }
+  }
 
   @override
   void dispose() {
@@ -59,8 +105,32 @@ class _AbsenceDocumentPageState extends State<AbsenceDocumentPage> {
     }
   }
 
-  void _submitForm() {
-    if (_dateController.text.isEmpty || _reasonController.text.isEmpty || !_isFileSelected) {
+  Future<void> _pickFile() async {
+    try {
+      FilePickerResult? result = await FilePicker.platform.pickFiles(
+        type: FileType.any,
+        allowMultiple: false,
+      );
+
+      if (result != null && result.files.single.path != null) {
+        setState(() {
+          _selectedFile = File(result.files.single.path!);
+          _isFileSelected = true;
+          _fileName = result.files.single.name;
+        });
+      }
+    } catch (e) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text("Error selecting file: $e"),
+          backgroundColor: Colors.red,
+        ),
+      );
+    }
+  }
+
+  Future<void> _submitForm() async {
+    if (_dateController.text.isEmpty || _reasonController.text.isEmpty || !_isFileSelected || _selectedDateRange == null) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
           content: Text("Please fill all fields and upload a document."),
@@ -70,14 +140,77 @@ class _AbsenceDocumentPageState extends State<AbsenceDocumentPage> {
       return;
     }
 
-    // Mock Success
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(
-        content: Text("Document Submitted Successfully!"),
-        backgroundColor: Colors.green,
-      ),
-    );
-    Navigator.pop(context);
+    final user = _auth.currentUser;
+    if (user == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text("Please log in to submit document."),
+          backgroundColor: Colors.red,
+        ),
+      );
+      return;
+    }
+
+    if (_classes.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text("You are not enrolled in any classes."),
+          backgroundColor: Colors.red,
+        ),
+      );
+      return;
+    }
+
+    setState(() => _isLoading = true);
+
+    try {
+      // Upload file to Firebase Storage once
+      final fileUrl = await _attendanceService.uploadAbsenceDocumentFile(
+        _selectedFile!,
+        user.uid,
+      );
+
+      // Submit document for ALL classes
+      for (var entry in _classes.entries) {
+        final classId = entry.key;
+        final classData = entry.value;
+        
+        await _attendanceService.submitAbsenceDocumentWithUrl(
+          studentId: user.uid,
+          studentName: user.displayName ?? 'Student',
+          classId: classId,
+          className: classData['className'] ?? 'Class',
+          subject: classData['subject'] ?? 'Subject',
+          startDate: _selectedDateRange!.start,
+          endDate: _selectedDateRange!.end,
+          reason: _reasonController.text,
+          fileUrl: fileUrl, // Same file URL for all classes
+          fileName: _fileName,
+        );
+      }
+
+      if (!mounted) return;
+      
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text("Document submitted successfully for all ${_classes.length} class(es)!"),
+          backgroundColor: Colors.green,
+        ),
+      );
+      Navigator.pop(context);
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text("Error submitting document: $e"),
+          backgroundColor: Colors.red,
+        ),
+      );
+    } finally {
+      if (mounted) {
+        setState(() => _isLoading = false);
+      }
+    }
   }
 
   @override
@@ -101,19 +234,21 @@ class _AbsenceDocumentPageState extends State<AbsenceDocumentPage> {
             ),
             const SizedBox(height: 8),
             Text(
-              "Please upload a clear photo or PDF of your Medical Certificate (MC) or explanation letter.",
+              "Please upload a clear photo or PDF of your Medical Certificate (MC) or explanation letter. This will apply to all your enrolled classes for the selected date range.",
               style: TextStyle(color: Colors.grey[600], fontSize: 14),
             ),
+            if (_classes.isNotEmpty) ...[
+              const SizedBox(height: 8),
+              Text(
+                "Classes: ${_classes.values.map((c) => "${c['subject'] ?? ''} - ${c['className'] ?? ''}").join(', ')}",
+                style: TextStyle(color: Colors.grey[700], fontSize: 12, fontStyle: FontStyle.italic),
+              ),
+            ],
             const SizedBox(height: 24),
 
             // --- Enhanced File Upload Area ---
             GestureDetector(
-              onTap: () {
-                setState(() {
-                  _isFileSelected = true;
-                  _fileName = "medical_certificate.jpg"; // Mock file selection
-                });
-              },
+              onTap: _isLoading ? null : _pickFile,
               child: Container(
                 height: 180,
                 width: double.infinity,
@@ -150,7 +285,13 @@ class _AbsenceDocumentPageState extends State<AbsenceDocumentPage> {
                     ),
                     if (_isFileSelected)
                       TextButton(
-                        onPressed: () => setState(() => _isFileSelected = false),
+                        onPressed: _isLoading
+                            ? null
+                            : () => setState(() {
+                                _isFileSelected = false;
+                                _selectedFile = null;
+                                _fileName = "";
+                              }),
                         child: const Text("Remove", style: TextStyle(color: Colors.red)),
                       )
                   ],
@@ -192,11 +333,13 @@ class _AbsenceDocumentPageState extends State<AbsenceDocumentPage> {
                   shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
                   elevation: 2,
                 ),
-                onPressed: _submitForm,
-                child: const Text(
-                  "Submit Document",
-                  style: TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.bold),
-                ),
+                onPressed: (_isLoading || !_isFileSelected) ? null : _submitForm,
+                child: _isLoading
+                    ? const CircularProgressIndicator(color: Colors.white)
+                    : const Text(
+                        "Submit Document",
+                        style: TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.bold),
+                      ),
               ),
             ),
           ],
