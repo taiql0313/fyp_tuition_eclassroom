@@ -1,4 +1,5 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:fyp_tuition_eclassroom/utils/timezone_helper.dart';
 
 /// Represents an active attendance session created by a teacher
 class AttendanceSession {
@@ -9,10 +10,12 @@ class AttendanceSession {
   final String code; // 6-digit code
   final String teacherId;
   final String teacherName;
-  final DateTime startTime;
-  final DateTime? endTime;
+  final DateTime startTime; // When session was created
+  final DateTime? endTime; // When session was ended
   final bool isActive;
-  final String? sessionTime; // e.g., "10:00 AM - 12:00 PM"
+  final String? sessionTime; // Display string e.g., "10:00 AM - 12:00 PM"
+  final DateTime? allowedStartTime; // When students can start checking in
+  final DateTime? allowedEndTime; // When students can no longer check in
 
   AttendanceSession({
     required this.id,
@@ -26,6 +29,8 @@ class AttendanceSession {
     this.endTime,
     required this.isActive,
     this.sessionTime,
+    this.allowedStartTime,
+    this.allowedEndTime,
   });
 
   factory AttendanceSession.fromMap(String id, Map<String, dynamic> map) {
@@ -41,6 +46,8 @@ class AttendanceSession {
       endTime: (map['endTime'] as Timestamp?)?.toDate(),
       isActive: map['isActive'] ?? false,
       sessionTime: map['sessionTime'],
+      allowedStartTime: (map['allowedStartTime'] as Timestamp?)?.toDate(),
+      allowedEndTime: (map['allowedEndTime'] as Timestamp?)?.toDate(),
     );
   }
 
@@ -56,7 +63,31 @@ class AttendanceSession {
       'endTime': endTime != null ? Timestamp.fromDate(endTime!) : null,
       'isActive': isActive,
       'sessionTime': sessionTime,
+      'allowedStartTime': allowedStartTime != null ? Timestamp.fromDate(allowedStartTime!) : null,
+      'allowedEndTime': allowedEndTime != null ? Timestamp.fromDate(allowedEndTime!) : null,
     };
+  }
+
+  /// Check if current time is within the allowed attendance window (using Malaysia time)
+  bool isWithinTimeWindow() {
+    final now = TimezoneHelper.getMalaysiaTime();
+    
+    if (allowedStartTime != null && allowedEndTime != null) {
+      // Both times are stored as UTC, convert to Malaysia time for comparison
+      final startTimeMalaysia = TimezoneHelper.toMalaysiaTime(allowedStartTime!);
+      final endTimeMalaysia = TimezoneHelper.toMalaysiaTime(allowedEndTime!);
+      
+      // Compare Malaysia time with Malaysia time
+      if (now.isBefore(startTimeMalaysia)) {
+        return false; // Too early
+      }
+      if (now.isAfter(endTimeMalaysia)) {
+        return false; // Too late
+      }
+      return true; // Within window
+    }
+    
+    return true; // No time restrictions
   }
 }
 
@@ -131,8 +162,9 @@ class AbsenceDocument {
   final String fileName;
   final DateTime submittedAt;
   final String status; // 'pending', 'approved', 'rejected'
-  final String? reviewedBy; // Teacher/admin who reviewed
+  final String? reviewedBy; // Admin who reviewed
   final DateTime? reviewedAt;
+  final String? reviewNotes; // Admin's review notes/comments
 
   AbsenceDocument({
     required this.id,
@@ -150,6 +182,7 @@ class AbsenceDocument {
     this.status = 'pending',
     this.reviewedBy,
     this.reviewedAt,
+    this.reviewNotes,
   });
 
   factory AbsenceDocument.fromMap(String id, Map<String, dynamic> map) {
@@ -169,6 +202,7 @@ class AbsenceDocument {
       status: map['status'] ?? 'pending',
       reviewedBy: map['reviewedBy'],
       reviewedAt: (map['reviewedAt'] as Timestamp?)?.toDate(),
+      reviewNotes: map['reviewNotes'],
     );
   }
 
@@ -188,6 +222,7 @@ class AbsenceDocument {
       'status': status,
       'reviewedBy': reviewedBy,
       'reviewedAt': reviewedAt != null ? Timestamp.fromDate(reviewedAt!) : null,
+      'reviewNotes': reviewNotes,
     };
   }
 }

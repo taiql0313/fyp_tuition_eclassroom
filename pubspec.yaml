@@ -38,6 +38,9 @@ dependencies:
   # These were removed to ensure the build passes. You will re-add them later.
   file_picker: ^8.0.0
   image_picker: ^1.0.5
+  url_launcher: ^6.3.0
+  path_provider: ^2.1.1
+  open_file: ^3.5.0
   # path_provider: ^2.1.1
   # qr_flutter: ^4.1.0
   # qr_code_scanner: ^4.0.1

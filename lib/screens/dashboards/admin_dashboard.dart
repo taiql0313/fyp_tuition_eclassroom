@@ -8,7 +8,8 @@ import '../../services/auth_service.dart';
 import '../admin/reports/reports_page.dart';
 import '../admin/admin_user_management.dart';
 import '../admin/system_log_page.dart';
-import '../admin/timetable_approval_page.dart'; // 👈 NEW IMPORT
+import '../admin/timetable_approval_page.dart';
+import '../admin/absence_approval_page.dart';
 
 class AdminDashboard extends StatelessWidget {
   const AdminDashboard({super.key});
@@ -126,6 +127,32 @@ class AdminDashboard extends StatelessWidget {
                               context,
                               MaterialPageRoute(
                                 builder: (_) => const TimetableApprovalPage(),
+                              ),
+                            );
+                          },
+                        );
+                      },
+                    ),
+
+                    // ABSENCE DOCUMENT APPROVAL TILE with badge
+                    StreamBuilder<QuerySnapshot>(
+                      stream: FirebaseFirestore.instance
+                          .collection('absence_documents')
+                          .where('status', isEqualTo: 'pending')
+                          .snapshots(),
+                      builder: (context, snapshot) {
+                        final pendingCount = snapshot.hasData ? snapshot.data!.docs.length : 0;
+                        return _adminTileWithBadge(
+                          context,
+                          'Absence Approval',
+                          Icons.description_outlined,
+                          Colors.orange,
+                          pendingCount,
+                          onTap: () {
+                            Navigator.push(
+                              context,
+                              MaterialPageRoute(
+                                builder: (_) => const AbsenceApprovalPage(),
                               ),
                             );
                           },

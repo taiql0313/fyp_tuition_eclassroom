@@ -90,6 +90,17 @@ class _AbsenceDocumentPageState extends State<AbsenceDocumentPage> {
     );
 
     if (picked != null) {
+      // Validate: end date must be >= start date
+      if (picked.end.isBefore(picked.start)) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text("End date must be on or after start date"),
+            backgroundColor: Colors.red,
+          ),
+        );
+        return;
+      }
+
       setState(() {
         _selectedDateRange = picked;
         // Format: "2023-10-01 - 2023-10-03" or just "2023-10-01" if same day
@@ -113,8 +124,37 @@ class _AbsenceDocumentPageState extends State<AbsenceDocumentPage> {
       );
 
       if (result != null && result.files.single.path != null) {
+        final file = File(result.files.single.path!);
+        
+        // Check file size before proceeding (1MB limit)
+        final fileSize = await file.length();
+        const maxSize = 1024 * 1024; // 1MB
+        if (fileSize > maxSize) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text(
+                'File is too large (${(fileSize / 1024 / 1024).toStringAsFixed(2)}MB). '
+                'Maximum size is 1MB. Please compress or resize the file.',
+              ),
+              backgroundColor: Colors.orange,
+              duration: const Duration(seconds: 5),
+            ),
+          );
+          return;
+        }
+
+        if (fileSize == 0) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text("Selected file is empty (0 bytes)"),
+              backgroundColor: Colors.red,
+            ),
+          );
+          return;
+        }
+
         setState(() {
-          _selectedFile = File(result.files.single.path!);
+          _selectedFile = file;
           _isFileSelected = true;
           _fileName = result.files.single.name;
         });
@@ -170,8 +210,40 @@ class _AbsenceDocumentPageState extends State<AbsenceDocumentPage> {
         user.uid,
       );
 
-      // Submit document for ALL classes
+      // Filter classes that have sessions/records in the selected date range
+      final applicableClasses = <MapEntry<String, Map<String, dynamic>>>[];
+      
       for (var entry in _classes.entries) {
+        final classId = entry.key;
+        final hasSessions = await _attendanceService.hasClassSessionsInDateRange(
+          classId,
+          _selectedDateRange!.start,
+          _selectedDateRange!.end,
+        );
+        
+        if (hasSessions) {
+          applicableClasses.add(entry);
+        }
+      }
+
+      if (applicableClasses.isEmpty) {
+        if (!mounted) return;
+        setState(() => _isLoading = false);
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text(
+              "No classes have attendance sessions in the selected date range. "
+              "Please select a date range that includes days when classes were held.",
+            ),
+            backgroundColor: Colors.orange,
+            duration: Duration(seconds: 5),
+          ),
+        );
+        return;
+      }
+
+      // Submit document only for classes with sessions in the date range
+      for (var entry in applicableClasses) {
         final classId = entry.key;
         final classData = entry.value;
         
@@ -193,8 +265,12 @@ class _AbsenceDocumentPageState extends State<AbsenceDocumentPage> {
       
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text("Document submitted successfully for all ${_classes.length} class(es)!"),
+          content: Text(
+            "Document submitted successfully for ${applicableClasses.length} class(es) "
+            "with sessions in the selected date range!",
+          ),
           backgroundColor: Colors.green,
+          duration: const Duration(seconds: 4),
         ),
       );
       Navigator.pop(context);
@@ -234,14 +310,14 @@ class _AbsenceDocumentPageState extends State<AbsenceDocumentPage> {
             ),
             const SizedBox(height: 8),
             Text(
-              "Please upload a clear photo or PDF of your Medical Certificate (MC) or explanation letter. This will apply to all your enrolled classes for the selected date range.",
+              "Please upload a clear photo or PDF of your Medical Certificate (MC) or explanation letter. This will only apply to classes that have attendance sessions in the selected date range.",
               style: TextStyle(color: Colors.grey[600], fontSize: 14),
             ),
             if (_classes.isNotEmpty) ...[
               const SizedBox(height: 8),
               Text(
-                "Classes: ${_classes.values.map((c) => "${c['subject'] ?? ''} - ${c['className'] ?? ''}").join(', ')}",
-                style: TextStyle(color: Colors.grey[700], fontSize: 12, fontStyle: FontStyle.italic),
+                "Note: This document will only apply to classes that have attendance sessions in the selected date range.",
+                style: TextStyle(color: Colors.orange[700], fontSize: 12, fontStyle: FontStyle.italic),
               ),
             ],
             const SizedBox(height: 24),

@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:fyp_tuition_eclassroom/services/attendance_service.dart';
+import 'package:fyp_tuition_eclassroom/utils/timezone_helper.dart';
 
 class TakeAttendancePage extends StatefulWidget {
   const TakeAttendancePage({super.key});
@@ -45,6 +46,35 @@ class _TakeAttendancePageState extends State<TakeAttendancePage> {
           const SnackBar(
             content: Text("Invalid or expired code"),
             backgroundColor: Colors.red,
+          ),
+        );
+        return;
+      }
+
+      // Check if current time is within the allowed window
+      if (!session.isWithinTimeWindow()) {
+        if (!mounted) return;
+        setState(() => _isLoading = false);
+        
+        String errorMessage = "Attendance cannot be taken at this time.";
+        if (session.allowedStartTime != null && session.allowedEndTime != null) {
+          final now = TimezoneHelper.getMalaysiaTime();
+          final startTime = TimezoneHelper.toMalaysiaTime(session.allowedStartTime!);
+          final endTime = TimezoneHelper.toMalaysiaTime(session.allowedEndTime!);
+          
+          if (now.isBefore(startTime)) {
+            final timeUntil = startTime.difference(now);
+            errorMessage = "Attendance window hasn't started yet. Please wait ${timeUntil.inMinutes} minutes.";
+          } else if (now.isAfter(endTime)) {
+            errorMessage = "Attendance window has ended. The session time was ${session.sessionTime ?? 'already passed'}.";
+          }
+        }
+        
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(errorMessage),
+            backgroundColor: Colors.orange,
+            duration: const Duration(seconds: 4),
           ),
         );
         return;

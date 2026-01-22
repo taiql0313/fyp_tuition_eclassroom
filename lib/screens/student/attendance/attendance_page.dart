@@ -6,6 +6,7 @@ import 'package:fyp_tuition_eclassroom/services/attendance_service.dart';
 import 'package:fyp_tuition_eclassroom/services/user_service.dart';
 import 'package:fyp_tuition_eclassroom/models/user_model.dart';
 import 'package:fyp_tuition_eclassroom/models/attendance_models.dart';
+import 'package:fyp_tuition_eclassroom/utils/timezone_helper.dart';
 
 // Import sub-pages
 import 'take_attendance_page.dart';
@@ -32,7 +33,20 @@ class _AttendancePageState extends State<AttendancePage> {
   void initState() {
     super.initState();
     _loadUserData();
+    // Check for expired sessions when page loads
+    _checkExpiredSessions();
   }
+
+  Future<void> _checkExpiredSessions() async {
+    // This will auto-close expired sessions and mark absent students
+    try {
+      await _attendanceService.checkAndCloseExpiredSessions();
+    } catch (e) {
+      // Silently handle - this is a background check
+      print('Error checking expired sessions: $e');
+    }
+  }
+
 
   Future<void> _loadUserData() async {
     final user = _auth.currentUser;
@@ -173,6 +187,11 @@ class _AttendancePageState extends State<AttendancePage> {
                         ),
                         const SizedBox(height: 4),
                         Text(
+                          "Excused: ${_stats?['excused'] ?? 0}",
+                          style: const TextStyle(color: Colors.white, fontSize: 12),
+                        ),
+                        const SizedBox(height: 4),
+                        Text(
                           "Absent: ${_stats?['absent'] ?? 0}",
                           style: const TextStyle(color: Colors.white, fontSize: 12),
                         ),
@@ -229,32 +248,53 @@ class _AttendancePageState extends State<AttendancePage> {
                 ? StreamBuilder<List<AttendanceRecord>>(
                     stream: _attendanceService.streamStudentRecords(_currentUser!.uid),
                     builder: (context, snapshot) {
-                      if (snapshot.connectionState == ConnectionState.waiting) {
-                        return const Center(child: CircularProgressIndicator());
-                      }
-
-                      if (!snapshot.hasData || snapshot.data!.isEmpty) {
-                        return const Center(
-                          child: Padding(
-                            padding: EdgeInsets.all(20.0),
-                            child: Text("No attendance records yet"),
-                          ),
-                        );
-                      }
-
-                      final records = snapshot.data!;
+                      // Get records - use existing data if available, even if stream is updating
+                      final records = snapshot.hasData 
+                          ? snapshot.data! 
+                          : <AttendanceRecord>[];
+                      
                       // Filter by selected class if applicable
                       final filteredRecords = _selectedClassId != null
                           ? records.where((r) => r.classId == _selectedClassId).toList()
                           : records;
 
-                      if (filteredRecords.isEmpty) {
+                      // Show loading only on initial load (no data yet)
+                      if (snapshot.connectionState == ConnectionState.waiting && 
+                          records.isEmpty) {
                         return const Center(
                           child: Padding(
                             padding: EdgeInsets.all(20.0),
-                            child: Text("No attendance records for this class"),
+                            child: CircularProgressIndicator(),
                           ),
                         );
+                      }
+
+                      // Show empty state only if we've fully loaded and there's no data
+                      if (snapshot.connectionState == ConnectionState.active && 
+                          filteredRecords.isEmpty) {
+                        return Center(
+                          child: Padding(
+                            padding: const EdgeInsets.all(20.0),
+                            child: Column(
+                              children: [
+                                Icon(Icons.history, size: 48, color: Colors.grey[400]),
+                                const SizedBox(height: 16),
+                                Text(
+                                  _selectedClassId != null
+                                      ? "No attendance records for this class"
+                                      : "No attendance records yet",
+                                  style: TextStyle(color: Colors.grey[600]),
+                                  textAlign: TextAlign.center,
+                                ),
+                              ],
+                            ),
+                          ),
+                        );
+                      }
+
+                      // If we have records, show them (even if stream is updating)
+                      if (filteredRecords.isEmpty) {
+                        return const SizedBox.shrink();
                       }
 
                       return ListView.builder(
@@ -266,77 +306,118 @@ class _AttendancePageState extends State<AttendancePage> {
                           final isAbsent = record.status == 'absent';
                           final isExcused = record.status == 'excused';
 
-                          return Container(
-                            margin: const EdgeInsets.only(bottom: 12),
-                            decoration: BoxDecoration(
-                              color: Colors.white,
-                              borderRadius: BorderRadius.circular(12),
-                              boxShadow: [
-                                BoxShadow(
-                                  color: Colors.grey.withOpacity(0.05),
-                                  blurRadius: 4,
-                                  offset: const Offset(0, 2),
-                                ),
-                              ],
-                            ),
-                            child: ListTile(
-                              leading: Container(
-                                padding: const EdgeInsets.all(8),
+                          return FutureBuilder<AbsenceDocument?>(
+                            future: isExcused && record.absenceDocumentId != null
+                                ? _attendanceService.getAbsenceDocument(record.absenceDocumentId!)
+                                : Future.value(null),
+                            builder: (context, docSnapshot) {
+                              final doc = docSnapshot.data;
+                              final reason = doc?.reason;
+
+                              return Container(
+                                margin: const EdgeInsets.only(bottom: 12),
                                 decoration: BoxDecoration(
-                                  color: isAbsent
-                                      ? Colors.red.shade50
-                                      : isExcused
-                                          ? Colors.orange.shade50
-                                          : Colors.green.shade50,
-                                  borderRadius: BorderRadius.circular(8),
+                                  color: Colors.white,
+                                  borderRadius: BorderRadius.circular(12),
+                                  boxShadow: [
+                                    BoxShadow(
+                                      color: Colors.grey.withOpacity(0.05),
+                                      blurRadius: 4,
+                                      offset: const Offset(0, 2),
+                                    ),
+                                  ],
                                 ),
-                                child: Icon(
-                                  isAbsent
-                                      ? Icons.close
-                                      : isExcused
-                                          ? Icons.info
-                                          : Icons.check,
-                                  color: isAbsent
-                                      ? Colors.red
-                                      : isExcused
-                                          ? Colors.orange
-                                          : Colors.green,
-                                ),
-                              ),
-                              title: Text(
-                                isAbsent
-                                    ? "Absent (No Reason)"
-                                    : isExcused
-                                        ? "Excused Absence"
-                                        : "Present",
-                                style: const TextStyle(fontWeight: FontWeight.bold),
-                              ),
-                              subtitle: Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  Text(
-                                    "${record.subject} - ${record.className}",
-                                    style: const TextStyle(fontSize: 12),
+                                child: ListTile(
+                                  leading: Container(
+                                    padding: const EdgeInsets.all(8),
+                                    decoration: BoxDecoration(
+                                      color: isAbsent
+                                          ? Colors.red.shade50
+                                          : isExcused
+                                              ? Colors.orange.shade50
+                                              : Colors.green.shade50,
+                                      borderRadius: BorderRadius.circular(8),
+                                    ),
+                                    child: Icon(
+                                      isAbsent
+                                          ? Icons.close
+                                          : isExcused
+                                              ? Icons.info_outline
+                                              : Icons.check_circle,
+                                      color: isAbsent
+                                          ? Colors.red
+                                          : isExcused
+                                              ? Colors.orange
+                                              : Colors.green,
+                                    ),
                                   ),
-                                  const SizedBox(height: 2),
-                                  Text(
-                                    DateFormat('MMM d, yyyy • h:mm a').format(record.timestamp),
-                                    style: TextStyle(color: Colors.grey[500], fontSize: 12),
+                                  title: Text(
+                                    isAbsent
+                                        ? "Absent"
+                                        : isExcused
+                                            ? "Absent (With Reason)"
+                                            : "Present",
+                                    style: const TextStyle(fontWeight: FontWeight.bold),
                                   ),
-                                ],
-                              ),
-                              trailing: isAbsent
-                                  ? TextButton(
-                                      onPressed: () => Navigator.push(
-                                        context,
-                                        MaterialPageRoute(
-                                          builder: (_) => const AbsenceDocumentPage(),
-                                        ),
+                                  subtitle: Column(
+                                    crossAxisAlignment: CrossAxisAlignment.start,
+                                    children: [
+                                      Text(
+                                        "${record.subject} - ${record.className}",
+                                        style: const TextStyle(fontSize: 12),
                                       ),
-                                      child: const Text("Upload MC"),
-                                    )
-                                  : null,
-                            ),
+                                      const SizedBox(height: 2),
+                                      Text(
+                                        DateFormat('MMM d, yyyy • h:mm a').format(
+                                          TimezoneHelper.toMalaysiaTime(record.timestamp),
+                                        ),
+                                        style: TextStyle(color: Colors.grey[500], fontSize: 12),
+                                      ),
+                                      if (isExcused && reason != null) ...[
+                                        const SizedBox(height: 4),
+                                        Container(
+                                          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                                          decoration: BoxDecoration(
+                                            color: Colors.orange.shade50,
+                                            borderRadius: BorderRadius.circular(4),
+                                          ),
+                                          child: Row(
+                                            mainAxisSize: MainAxisSize.min,
+                                            children: [
+                                              Icon(Icons.description, size: 12, color: Colors.orange[700]),
+                                              const SizedBox(width: 4),
+                                              Flexible(
+                                                child: Text(
+                                                  reason,
+                                                  style: TextStyle(
+                                                    color: Colors.orange[700],
+                                                    fontSize: 11,
+                                                    fontStyle: FontStyle.italic,
+                                                  ),
+                                                  maxLines: 1,
+                                                  overflow: TextOverflow.ellipsis,
+                                                ),
+                                              ),
+                                            ],
+                                          ),
+                                        ),
+                                      ],
+                                    ],
+                                  ),
+                                  trailing: isAbsent
+                                      ? TextButton(
+                                          onPressed: () => Navigator.push(
+                                            context,
+                                            MaterialPageRoute(
+                                              builder: (_) => const AbsenceDocumentPage(),
+                                            ),
+                                          ),
+                                          child: const Text("Upload MC"),
+                                        )
+                                      : null,
+                                ),
+                              );
+                            },
                           );
                         },
                       );
