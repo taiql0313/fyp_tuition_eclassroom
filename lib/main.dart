@@ -6,7 +6,7 @@ import 'package:provider/provider.dart';
 import 'services/auth_service.dart';
 import 'routes.dart';
 
-Future<void> main() async {
+Future<void> main() async { //gay
   WidgetsFlutterBinding.ensureInitialized();
   await Firebase.initializeApp(); // Android uses google-services.json
   runApp(const MyApp());
