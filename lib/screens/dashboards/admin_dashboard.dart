@@ -10,6 +10,8 @@ import '../admin/admin_user_management.dart';
 import '../admin/system_log_page.dart';
 import '../admin/timetable_approval_page.dart';
 import '../admin/absence_approval_page.dart';
+import '../admin/subject_management_page.dart';
+import '../admin/payment_management_page.dart';
 
 class AdminDashboard extends StatelessWidget {
   const AdminDashboard({super.key});
@@ -94,11 +96,22 @@ class AdminDashboard extends StatelessWidget {
                       Navigator.push(context, MaterialPageRoute(builder: (_) => const AdminUserManagement()));
                     }),
 
+                    _adminTile(context, 'Manage Subjects', Icons.book_outlined, Colors.purple, onTap: () {
+                      Navigator.push(context, MaterialPageRoute(builder: (_) => const SubjectManagementPage()));
+                    }),
+
                     _adminTile(context, 'Reports', Icons.bar_chart, Colors.orange, onTap: () {
                       Navigator.push(context, MaterialPageRoute(builder: (_) => const ReportsPage()));
                     }),
 
-                    _adminTile(context, 'Payments', Icons.receipt_long, Colors.green),
+                    _adminTile(context, 'Payment Management', Icons.receipt_long, Colors.green, onTap: () {
+                      Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                          builder: (_) => const PaymentManagementPage(),
+                        ),
+                      );
+                    }),
 
                     // LINKED LOGS PAGE
                     _adminTile(context, 'Logs', Icons.terminal, Colors.blueGrey, onTap: () {

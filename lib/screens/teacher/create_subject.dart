@@ -1,6 +1,11 @@
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:fyp_tuition_eclassroom/services/subject_service.dart';
+import 'package:fyp_tuition_eclassroom/services/user_service.dart';
+import 'package:fyp_tuition_eclassroom/models/subject_model.dart';
+import 'package:fyp_tuition_eclassroom/models/user_model.dart';
+import 'package:intl/intl.dart';
 
 class CreateClassroomPage extends StatefulWidget {
   const CreateClassroomPage({super.key});
@@ -16,8 +21,12 @@ class _CreateClassroomPageState extends State<CreateClassroomPage> {
   final TextEditingController _sectionController = TextEditingController();
   final TextEditingController _descController = TextEditingController();
 
-  String? _selectedSubject; // For the dropdown
-  final List<String> _subjects = ["Physics", "Mathematics", "Computer Science", "Biology", "English"];
+  final SubjectService _subjectService = SubjectService();
+  final UserService _userService = UserService();
+  final FirebaseAuth _auth = FirebaseAuth.instance;
+  String? _selectedSubjectId; // Store subject ID instead of name
+  AppUser? _currentUser;
+  bool _isLoadingUser = true;
   
   String? _selectedDay; // Day of the week
   final List<String> _daysOfWeek = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
@@ -34,6 +43,29 @@ class _CreateClassroomPageState extends State<CreateClassroomPage> {
     {'label': '10:00 PM - 12:00 AM', 'start': '22:00', 'end': '00:00'},
   ];
 
+  @override
+  void initState() {
+    super.initState();
+    _loadCurrentUser();
+  }
+
+  Future<void> _loadCurrentUser() async {
+    final user = _auth.currentUser;
+    if (user != null) {
+      final appUser = await _userService.getUser(user.uid);
+      setState(() {
+        _currentUser = appUser;
+        _isLoadingUser = false;
+      });
+    } else {
+      setState(() {
+        _isLoadingUser = false;
+      });
+    }
+  }
+
+  bool get _isAdmin => _currentUser?.role == 'admin';
+
   // 2. The "Save to Firebase" function
   Future<void> _saveClassroom() async {
     // 1. Get the current logged-in teacher's info
@@ -43,7 +75,7 @@ class _CreateClassroomPageState extends State<CreateClassroomPage> {
 
     try {
       // Validate required fields
-      if (_selectedSubject == null || _selectedDay == null || _selectedTimeSlot == null) {
+      if (_selectedSubjectId == null || _selectedDay == null || _selectedTimeSlot == null) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
             content: Text("Please fill in all required fields (Subject, Day, and Time)"),
@@ -53,10 +85,24 @@ class _CreateClassroomPageState extends State<CreateClassroomPage> {
         return;
       }
 
+      // Get subject details to store name and price
+      final subject = await _subjectService.getSubject(_selectedSubjectId!);
+      if (subject == null) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text("Selected subject not found"),
+            backgroundColor: Colors.red,
+          ),
+        );
+        return;
+      }
+
       // 2. Add to "classrooms" collection
       await FirebaseFirestore.instance.collection('classrooms').add({
         'className': _nameController.text,
-        'subject': _selectedSubject,
+        'subject': subject.name,
+        'subjectId': _selectedSubjectId,
+        'subjectPrice': subject.price,
         'classCode': _codeController.text,
         'section': _sectionController.text,
         'description': _descController.text,
@@ -103,7 +149,7 @@ class _CreateClassroomPageState extends State<CreateClassroomPage> {
             _buildInputField("Classroom Name", "e.g., Data Structures 2024", Icons.book, _nameController),
 
             const SizedBox(height: 15),
-            _buildDropdownField(),
+            _buildSubjectDropdownField(),
 
             const SizedBox(height: 15),
             _buildDayDropdownField(),
@@ -161,7 +207,19 @@ class _CreateClassroomPageState extends State<CreateClassroomPage> {
           ),
           const SizedBox(height: 15),
           const Text("Classroom Name", style: TextStyle(color: Colors.white, fontSize: 24, fontWeight: FontWeight.bold)),
-          Text(_selectedSubject ?? "Subject", style: TextStyle(color: Colors.white70, fontSize: 16)),
+          StreamBuilder<List<Subject>>(
+            stream: _subjectService.streamSubjects(),
+            builder: (context, snapshot) {
+              if (snapshot.hasData && _selectedSubjectId != null) {
+                final subject = snapshot.data!.firstWhere(
+                  (s) => s.id == _selectedSubjectId,
+                  orElse: () => Subject(id: '', name: 'Subject', price: 0, createdAt: DateTime.now()),
+                );
+                return Text(subject.name, style: const TextStyle(color: Colors.white70, fontSize: 16));
+              }
+              return const Text("Subject", style: TextStyle(color: Colors.white70, fontSize: 16));
+            },
+          ),
           const SizedBox(height: 20),
           const Row(
             children: [
@@ -198,26 +256,105 @@ class _CreateClassroomPageState extends State<CreateClassroomPage> {
     );
   }
 
-  Widget _buildDropdownField() {
+  Widget _buildSubjectDropdownField() {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        const Text("Subject", style: TextStyle(fontWeight: FontWeight.bold, color: Colors.grey)),
+        Row(
+          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          children: [
+            const Text("Subject", style: TextStyle(fontWeight: FontWeight.bold, color: Colors.grey)),
+            // Only show "Add New" button for admins
+            if (_isAdmin)
+              TextButton.icon(
+                onPressed: () => _showCreateSubjectDialog(),
+                icon: const Icon(Icons.add, size: 18),
+                label: const Text("Add New"),
+                style: TextButton.styleFrom(
+                  foregroundColor: const Color(0xFF1458A3),
+                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                ),
+              ),
+          ],
+        ),
         const SizedBox(height: 8),
-        Container(
-          padding: const EdgeInsets.symmetric(horizontal: 12),
-          decoration: BoxDecoration(color: Colors.grey.shade100, borderRadius: BorderRadius.circular(12)),
-          child: DropdownButtonHideUnderline(
-            child: DropdownButton<String>(
-              isExpanded: true,
-              hint: const Text("Select Subject"),
-              value: _selectedSubject,
-              items: _subjects.map((String value) => DropdownMenuItem(value: value, child: Text(value))).toList(),
-              onChanged: (val) => setState(() => _selectedSubject = val),
-            ),
-          ),
+        StreamBuilder<List<Subject>>(
+          stream: _subjectService.streamSubjects(),
+          builder: (context, snapshot) {
+            if (snapshot.connectionState == ConnectionState.waiting) {
+              return Container(
+                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 16),
+                decoration: BoxDecoration(
+                  color: Colors.grey.shade100,
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: const Center(child: CircularProgressIndicator()),
+              );
+            }
+
+            if (!snapshot.hasData || snapshot.data!.isEmpty) {
+              return Container(
+                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 16),
+                decoration: BoxDecoration(
+                  color: Colors.grey.shade100,
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: const Text("No subjects available. Click 'Add New' to create one."),
+              );
+            }
+
+            final subjects = snapshot.data!;
+            return Container(
+              padding: const EdgeInsets.symmetric(horizontal: 12),
+              decoration: BoxDecoration(
+                color: Colors.grey.shade100,
+                borderRadius: BorderRadius.circular(12),
+              ),
+              child: DropdownButtonHideUnderline(
+                child: DropdownButton<String>(
+                  isExpanded: true,
+                  hint: const Text("Select Subject"),
+                  value: _selectedSubjectId,
+                  items: subjects.map((Subject subject) {
+                    return DropdownMenuItem<String>(
+                      value: subject.id,
+                      child: Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        children: [
+                          Text(subject.name),
+                          Text(
+                            'RM ${NumberFormat('#,##0.00').format(subject.price)}',
+                            style: TextStyle(
+                              color: Colors.grey[600],
+                              fontSize: 12,
+                              fontWeight: FontWeight.w500,
+                            ),
+                          ),
+                        ],
+                      ),
+                    );
+                  }).toList(),
+                  onChanged: (val) => setState(() => _selectedSubjectId = val),
+                ),
+              ),
+            );
+          },
         ),
       ],
+    );
+  }
+
+  void _showCreateSubjectDialog() {
+    final nameController = TextEditingController();
+    final priceController = TextEditingController();
+
+    showDialog(
+      context: context,
+      builder: (context) => _CreateSubjectDialog(
+        nameController: nameController,
+        priceController: priceController,
+        subjectService: _subjectService,
+      ),
     );
   }
 
@@ -276,5 +413,121 @@ class _CreateClassroomPageState extends State<CreateClassroomPage> {
         ),
       ],
     );
+  }
+}
+
+class _CreateSubjectDialog extends StatefulWidget {
+  final TextEditingController nameController;
+  final TextEditingController priceController;
+  final SubjectService subjectService;
+
+  const _CreateSubjectDialog({
+    required this.nameController,
+    required this.priceController,
+    required this.subjectService,
+  });
+
+  @override
+  State<_CreateSubjectDialog> createState() => _CreateSubjectDialogState();
+}
+
+class _CreateSubjectDialogState extends State<_CreateSubjectDialog> {
+  bool _isCreating = false;
+
+  @override
+  Widget build(BuildContext context) {
+    return AlertDialog(
+          title: const Text("Create New Subject"),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              TextField(
+                controller: widget.nameController,
+                decoration: const InputDecoration(
+                  labelText: "Subject Name",
+                  hintText: "e.g., Physics",
+                  border: OutlineInputBorder(),
+                ),
+              ),
+              const SizedBox(height: 16),
+              TextField(
+                controller: widget.priceController,
+                keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                decoration: const InputDecoration(
+                  labelText: "Price (RM)",
+                  hintText: "e.g., 150.00",
+                  border: OutlineInputBorder(),
+                  prefixText: "RM ",
+                ),
+              ),
+            ],
+          ),
+          actions: [
+            TextButton(
+              onPressed: _isCreating ? null : () => Navigator.pop(context),
+              child: const Text("Cancel"),
+            ),
+            ElevatedButton(
+              onPressed: _isCreating
+                  ? null
+                  : () async {
+                      if (widget.nameController.text.trim().isEmpty) {
+                        if (context.mounted) {
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            const SnackBar(content: Text("Please enter subject name")),
+                          );
+                        }
+                        return;
+                      }
+
+                      final price = double.tryParse(widget.priceController.text);
+                      if (price == null || price < 0) {
+                        if (context.mounted) {
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            const SnackBar(content: Text("Please enter a valid price")),
+                          );
+                        }
+                        return;
+                      }
+
+                      setState(() => _isCreating = true);
+
+                      try {
+                        await widget.subjectService.createSubject(
+                          name: widget.nameController.text.trim(),
+                          price: price,
+                        );
+
+                        if (context.mounted) {
+                          Navigator.pop(context);
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            const SnackBar(
+                              content: Text("Subject created successfully!"),
+                              backgroundColor: Colors.green,
+                            ),
+                          );
+                        }
+                      } catch (e) {
+                        setState(() => _isCreating = false);
+                        if (context.mounted) {
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            SnackBar(
+                              content: Text("Error: ${e.toString()}"),
+                              backgroundColor: Colors.red,
+                            ),
+                          );
+                        }
+                      }
+                    },
+              child: _isCreating
+                  ? const SizedBox(
+                      width: 20,
+                      height: 20,
+                      child: CircularProgressIndicator(strokeWidth: 2),
+                    )
+                  : const Text("Create"),
+            ),
+          ],
+        );
   }
 }

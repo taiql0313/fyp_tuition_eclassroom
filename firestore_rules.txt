@@ -226,10 +226,111 @@ service cloud.firestore {
       allow create: if request.auth != null;
     }
     
-    // --- FEES & PAYMENTS ---
+    // --- FEES & PAYMENTS (OLD STRUCTURE - KEEP FOR BACKWARD COMPATIBILITY) ---
     match /payments/{uid} {
       allow read, write: if request.auth != null
                         && request.auth.uid == uid;
+    }
+
+    // --- INVOICES COLLECTION (NEW) ---
+    match /invoices/{invoiceId} {
+      // Students can read their own invoices
+      // Admins can read all invoices
+      allow read: if request.auth != null && 
+        (resource.data.studentId == request.auth.uid || isAdmin());
+      
+      // Only system/admin can create invoices (via service)
+      allow create: if request.auth != null && isAdmin();
+      
+      // Students can update their own invoices (e.g., mark as paid after verification)
+      // Admins can update any invoices
+      allow update: if request.auth != null && 
+        (
+          // Existing document or new data has matching studentId
+          (resource.data.studentId == request.auth.uid) ||
+          (request.resource.data.studentId == request.auth.uid) ||
+          isAdmin()
+        );
+      
+      // Only admins can delete
+      allow delete: if request.auth != null && isAdmin();
+    }
+
+    // --- PAYMENT TRANSACTIONS COLLECTION (NEW) ---
+    match /payment_transactions/{transactionId} {
+      // Students can read their own transactions
+      // Admins can read all transactions
+      allow read: if request.auth != null && 
+        (resource.data.studentId == request.auth.uid || isAdmin());
+      
+      // Students can create transactions (when initiating payment)
+      // Check: studentId in the transaction must match the authenticated user
+      // Admins can create transactions (manual payments)
+      allow create: if request.auth != null && 
+        (request.resource.data.studentId == request.auth.uid || isAdmin());
+      
+      // Students can update their own transactions (e.g., to add PayPal order ID)
+      // Admins can update any transactions
+      allow update: if request.auth != null && 
+        (
+          (resource.data.studentId == request.auth.uid) ||
+          (request.resource.data.studentId == request.auth.uid) ||
+          isAdmin()
+        );
+      
+      // Only admins can delete
+      allow delete: if request.auth != null && isAdmin();
+    }
+
+    // --- PAYMENT REMINDERS COLLECTION (NEW) ---
+    match /payment_reminders/{reminderId} {
+      // Students can read their own reminders
+      // Admins can read all reminders (check admin status once)
+      allow read: if request.auth != null && 
+        (resource.data.studentId == request.auth.uid || isAdmin());
+      
+      // Allow listing all reminders for admins (needed for StreamBuilder)
+      // This is checked at query level, so admins can query all reminders
+      allow list: if request.auth != null && isAdmin();
+      
+      // Only system/admin can create reminders
+      allow create: if request.auth != null && isAdmin();
+      
+      // Only admins can update/delete
+      allow update, delete: if request.auth != null && isAdmin();
+    }
+
+    // --- SUBJECTS COLLECTION ---
+    match /subjects/{subjectId} {
+      // All authenticated users can read active subjects
+      allow read: if request.auth != null;
+      
+      // Only admins can create subjects
+      allow create: if request.auth != null && isAdmin();
+      
+      // Only admins can update/delete subjects
+      allow update, delete: if request.auth != null && isAdmin();
+    }
+
+    // --- NOTIFICATIONS COLLECTION ---
+    match /notifications/{notificationId} {
+      // Users can read their own notifications
+      // Admins can read all notifications
+      allow read: if request.auth != null && 
+        (resource.data.userId == request.auth.uid || isAdmin());
+      
+      // Admins can create notifications for any user
+      // Users can create their own notifications (for system messages)
+      allow create: if request.auth != null && 
+        (request.resource.data.userId == request.auth.uid || isAdmin());
+      
+      // Users can update their own notifications (mark as read)
+      // Admins can update any notifications
+      allow update: if request.auth != null && 
+        (resource.data.userId == request.auth.uid || isAdmin());
+      
+      // Only admins can delete notifications
+      allow delete: if request.auth != null && isAdmin();
     }
 
   }
