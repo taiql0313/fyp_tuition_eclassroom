@@ -18,6 +18,7 @@ import 'screens/student/classroom/stu_classroom_dashboard.dart';
 import 'screens/student/classroom/join_classroom_page.dart';
 import 'screens/teacher/timetable/teacher_timetable_page.dart';
 import 'screens/student/timetable/student_timetable_page.dart';
+import 'screens/student/quiz/student_answer_quiz_page.dart';
 
 
 class Routes {
@@ -40,6 +41,7 @@ class Routes {
   static const String joinClassroom = '/join-classroom';
   static const String teacherTimetable = '/teacher-timetable';
   static const String studentTimetable = '/student-timetable';
+  static const String studentAnswerQuiz = '/student-answer-quiz';
 
 
 
@@ -103,6 +105,14 @@ class Routes {
         return MaterialPageRoute(builder: (_) => const TeacherTimetablePage());
       case studentTimetable:
         return MaterialPageRoute(builder: (_) => const StudentTimetablePage());
+      case studentAnswerQuiz:
+        final args = settings.arguments as Map<String, dynamic>;
+        return MaterialPageRoute(
+          builder: (_) => StudentAnswerQuizPage(
+            quizId: args['quizId'],
+            quizData: args['quizData'],
+          ),
+        );
       default:
         return MaterialPageRoute(
             builder: (_) => Scaffold(body: Center(child: Text('Unknown route'))));

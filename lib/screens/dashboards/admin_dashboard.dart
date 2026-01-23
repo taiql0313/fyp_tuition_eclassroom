@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:intl/intl.dart';
 import '../../routes.dart';
 import '../../services/auth_service.dart';
 
@@ -26,7 +27,7 @@ class AdminDashboard extends StatelessWidget {
         children: [
           // --- CUSTOM HEADER ---
           Container(
-            padding: const EdgeInsets.only(top: 50, left: 20, right: 20, bottom: 30),
+            padding: const EdgeInsets.only(top: 50, left: 20, right: 20, bottom: 20),
             decoration: const BoxDecoration(
               color: Color(0xff1458a3),
               borderRadius: BorderRadius.only(
@@ -39,28 +40,93 @@ class AdminDashboard extends StatelessWidget {
                 Row(
                   mainAxisAlignment: MainAxisAlignment.spaceBetween,
                   children: [
-                    const Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
+                    Row(
                       children: [
-                        Text("Admin Console", style: TextStyle(color: Colors.white70, fontSize: 14)),
-                        SizedBox(height: 5),
-                        Text("Dashboard", style: TextStyle(color: Colors.white, fontSize: 24, fontWeight: FontWeight.bold)),
+                        Container(
+                          width: 50,
+                          height: 50,
+                          decoration: BoxDecoration(
+                            color: Colors.white.withOpacity(0.2),
+                            shape: BoxShape.circle,
+                          ),
+                          child: const Center(
+                            child: Text(
+                              'e',
+                              style: TextStyle(
+                                color: Colors.white,
+                                fontSize: 24,
+                                fontWeight: FontWeight.bold,
+                              ),
+                            ),
+                          ),
+                        ),
+                        const SizedBox(width: 12),
+                        Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            const Text(
+                              "Admin Console",
+                              style: TextStyle(color: Colors.white, fontSize: 20, fontWeight: FontWeight.bold),
+                            ),
+                            const SizedBox(height: 2),
+                            Text(
+                              "System Administrator",
+                              style: TextStyle(color: Colors.white.withOpacity(0.8), fontSize: 12),
+                            ),
+                          ],
+                        ),
                       ],
                     ),
-                    Container(
-                      decoration: BoxDecoration(color: Colors.white24, borderRadius: BorderRadius.circular(12)),
-                      child: IconButton(
-                        icon: const Icon(Icons.logout, color: Colors.white),
-                        onPressed: () async {
-                          await auth.signOut();
-                          if (context.mounted) Navigator.pushReplacementNamed(context, Routes.login);
-                        },
-                      ),
-                    )
+                    Row(
+                      children: [
+                        Stack(
+                          children: [
+                            IconButton(
+                              icon: const Icon(Icons.notifications_none, color: Colors.white),
+                              onPressed: () {},
+                            ),
+                            Positioned(
+                              right: 8,
+                              top: 8,
+                              child: Container(
+                                width: 8,
+                                height: 8,
+                                decoration: const BoxDecoration(
+                                  color: Colors.red,
+                                  shape: BoxShape.circle,
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                        PopupMenuButton<String>(
+                          icon: const Icon(Icons.more_vert, color: Colors.white),
+                          onSelected: (value) async {
+                            if (value == 'logout') {
+                              await auth.signOut();
+                              if (context.mounted) Navigator.pushReplacementNamed(context, Routes.login);
+                            }
+                          },
+                          itemBuilder: (context) => [
+                            const PopupMenuItem(value: 'profile', child: Text('Profile')),
+                            const PopupMenuItem(
+                              value: 'logout',
+                              child: Text('Logout', style: TextStyle(color: Colors.red)),
+                            ),
+                          ],
+                        ),
+                      ],
+                    ),
                   ],
                 ),
               ],
             ),
+          ),
+
+          // --- WELCOME BACK CARD ---
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 20),
+            child: _WelcomeBackCard(auth: auth),
           ),
 
           // --- BODY CONTENT ---
@@ -71,11 +137,20 @@ class AdminDashboard extends StatelessWidget {
                 const Text("System Overview", style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: Colors.black87)),
                 const SizedBox(height: 15),
 
-                const Row(
+                Row(
                   children: [
-                    Expanded(child: _StatCard(label: "Active Users", value: "1,240", color: Colors.blue)),
-                    SizedBox(width: 15),
-                    Expanded(child: _StatCard(label: "Daily Revenue", value: "RM 4.2k", color: Colors.green)),
+                    Expanded(child: _UsersStatCard()),
+                    const SizedBox(width: 15),
+                    Expanded(child: _DailyRevenueStatCard()),
+                  ],
+                ),
+                const SizedBox(height: 15),
+                Row(
+                  children: [
+                    Expanded(child: _TotalCoursesStatCard()),
+                    const SizedBox(width: 15),
+                    // System Health card removed as per user request
+                    const Expanded(child: SizedBox()),
                   ],
                 ),
 
@@ -195,6 +270,7 @@ class AdminDashboard extends StatelessWidget {
         },
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
+          crossAxisAlignment: CrossAxisAlignment.center,
           children: [
             Container(
               padding: const EdgeInsets.all(12),
@@ -205,7 +281,11 @@ class AdminDashboard extends StatelessWidget {
               child: Icon(icon, size: 30, color: color),
             ),
             const SizedBox(height: 12),
-            Text(title, style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 14)),
+            Text(
+              title,
+              style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 14),
+              textAlign: TextAlign.center,
+            ),
           ],
         ),
       ),
@@ -234,6 +314,7 @@ class AdminDashboard extends StatelessWidget {
           children: [
             Column(
               mainAxisAlignment: MainAxisAlignment.center,
+              crossAxisAlignment: CrossAxisAlignment.center,
               children: [
                 Container(
                   padding: const EdgeInsets.all(12),
@@ -278,20 +359,279 @@ class AdminDashboard extends StatelessWidget {
   }
 }
 
+// Base Stat Card Widget
 class _StatCard extends StatelessWidget {
   final String label, value;
   final Color color;
-  const _StatCard({required this.label, required this.value, required this.color});
+  final IconData icon;
+  const _StatCard({required this.label, required this.value, required this.color, required this.icon});
 
   @override
   Widget build(BuildContext context) {
     return Container(
       padding: const EdgeInsets.all(15),
-      decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(16), boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.05), blurRadius: 10)]),
-      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-        Text(value, style: TextStyle(fontSize: 22, fontWeight: FontWeight.bold, color: color)),
-        Text(label, style: const TextStyle(fontSize: 12, color: Colors.grey)),
-      ]),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(16),
+        boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.05), blurRadius: 10)],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.center,
+        children: [
+          Container(
+            padding: const EdgeInsets.all(10),
+            decoration: BoxDecoration(
+              color: color.withOpacity(0.1),
+              borderRadius: BorderRadius.circular(8),
+            ),
+            child: Icon(icon, size: 28, color: color),
+          ),
+          const SizedBox(height: 12),
+          Text(
+            value,
+            style: TextStyle(fontSize: 22, fontWeight: FontWeight.bold, color: color),
+          ),
+          const SizedBox(height: 4),
+          Text(
+            label,
+            style: const TextStyle(fontSize: 12, color: Colors.grey),
+            textAlign: TextAlign.center,
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+// Users Stat Card with Real Data
+class _UsersStatCard extends StatelessWidget {
+  @override
+  Widget build(BuildContext context) {
+    return StreamBuilder<QuerySnapshot>(
+      stream: FirebaseFirestore.instance.collection('users').snapshots(),
+      builder: (context, snapshot) {
+        final userCount = snapshot.hasData ? snapshot.data!.docs.length : 0;
+        final formattedCount = _formatNumber(userCount);
+        
+        return _StatCard(
+          label: "Users",
+          value: formattedCount,
+          icon: Icons.people_outline,
+          color: Colors.blue,
+        );
+      },
+    );
+  }
+
+  String _formatNumber(int number) {
+    if (number >= 1000) {
+      return '${(number / 1000).toStringAsFixed(1)}k';
+    }
+    return number.toString();
+  }
+}
+
+// Daily Revenue Stat Card with Real Data
+class _DailyRevenueStatCard extends StatelessWidget {
+  @override
+  Widget build(BuildContext context) {
+    final today = DateTime.now();
+    final startOfDay = DateTime(today.year, today.month, today.day);
+    final endOfDay = startOfDay.add(const Duration(days: 1));
+
+    return StreamBuilder<QuerySnapshot>(
+      stream: FirebaseFirestore.instance
+          .collection('payment_transactions')
+          .where('status', isEqualTo: 'completed')
+          .where('completedAt', isGreaterThanOrEqualTo: Timestamp.fromDate(startOfDay))
+          .where('completedAt', isLessThan: Timestamp.fromDate(endOfDay))
+          .snapshots(),
+      builder: (context, snapshot) {
+        double totalRevenue = 0.0;
+        
+        if (snapshot.hasData) {
+          for (var doc in snapshot.data!.docs) {
+            final data = doc.data() as Map<String, dynamic>;
+            final amount = (data['amount'] as num?)?.toDouble() ?? 0.0;
+            totalRevenue += amount;
+          }
+        }
+
+        final formattedRevenue = _formatCurrency(totalRevenue);
+        
+        return _StatCard(
+          label: "Daily Revenue",
+          value: formattedRevenue,
+          icon: Icons.attach_money,
+          color: Colors.green,
+        );
+      },
+    );
+  }
+
+  String _formatCurrency(double amount) {
+    if (amount >= 1000) {
+      return 'RM ${(amount / 1000).toStringAsFixed(1)}k';
+    }
+    return 'RM ${amount.toStringAsFixed(0)}';
+  }
+}
+
+// Total Courses Stat Card with Real Data
+class _TotalCoursesStatCard extends StatelessWidget {
+  @override
+  Widget build(BuildContext context) {
+    return StreamBuilder<QuerySnapshot>(
+      stream: FirebaseFirestore.instance.collection('classrooms').snapshots(),
+      builder: (context, snapshot) {
+        final courseCount = snapshot.hasData ? snapshot.data!.docs.length : 0;
+        
+        return _StatCard(
+          label: "Total Courses",
+          value: courseCount.toString(),
+          icon: Icons.book_outlined,
+          color: Colors.purple,
+        );
+      },
+    );
+  }
+}
+
+// Welcome Back Card Widget
+class _WelcomeBackCard extends StatelessWidget {
+  final AuthService auth;
+  
+  const _WelcomeBackCard({required this.auth});
+
+  @override
+  Widget build(BuildContext context) {
+    final user = auth.currentUser;
+    final uid = user?.uid ?? "";
+
+    return StreamBuilder<DocumentSnapshot>(
+      stream: FirebaseFirestore.instance.collection('users').doc(uid).snapshots(),
+      builder: (context, snapshot) {
+        String displayName = user?.displayName ?? "Admin Manager";
+        String lastLoginText = "Last login: Today, ${DateFormat('h:mm a').format(DateTime.now())}";
+
+        if (snapshot.hasData && snapshot.data!.exists) {
+          final userData = snapshot.data!.data() as Map<String, dynamic>?;
+          displayName = userData?['displayName'] ?? user?.displayName ?? "Admin Manager";
+          
+          // Get last login time from Firestore
+          final lastLogin = userData?['lastLogin'] as Timestamp?;
+          if (lastLogin != null) {
+            final lastLoginDate = lastLogin.toDate();
+            final now = DateTime.now();
+            final today = DateTime(now.year, now.month, now.day);
+            final loginDay = DateTime(lastLoginDate.year, lastLoginDate.month, lastLoginDate.day);
+            
+            if (loginDay == today) {
+              lastLoginText = "Last login: Today, ${DateFormat('h:mm a').format(lastLoginDate)}";
+            } else {
+              final yesterday = today.subtract(const Duration(days: 1));
+              if (loginDay == yesterday) {
+                lastLoginText = "Last login: Yesterday, ${DateFormat('h:mm a').format(lastLoginDate)}";
+              } else {
+                lastLoginText = "Last login: ${DateFormat('MMM d, y').format(lastLoginDate)}, ${DateFormat('h:mm a').format(lastLoginDate)}";
+              }
+            }
+          }
+        }
+
+        return Container(
+          padding: const EdgeInsets.all(20),
+          decoration: BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.circular(16),
+            boxShadow: [
+              BoxShadow(
+                color: Colors.black.withOpacity(0.05),
+                blurRadius: 10,
+                offset: const Offset(0, 2),
+              ),
+            ],
+          ),
+          child: Row(
+            children: [
+              // Left: Shield Icon
+              Container(
+                width: 60,
+                height: 60,
+                decoration: BoxDecoration(
+                  color: const Color(0xff1458a3).withOpacity(0.1),
+                  shape: BoxShape.circle,
+                ),
+                child: const Icon(
+                  Icons.shield_outlined,
+                  color: Color(0xff1458a3),
+                  size: 32,
+                ),
+              ),
+              const SizedBox(width: 16),
+              // Middle: Welcome Text
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      "Welcome back,",
+                      style: TextStyle(
+                        color: Colors.grey.shade600,
+                        fontSize: 14,
+                      ),
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      displayName,
+                      style: const TextStyle(
+                        color: Colors.black87,
+                        fontSize: 20,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      lastLoginText,
+                      style: TextStyle(
+                        color: Colors.grey.shade600,
+                        fontSize: 12,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              // Right: Admin Badge
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                decoration: BoxDecoration(
+                  color: const Color(0xff1458a3).withOpacity(0.1),
+                  borderRadius: BorderRadius.circular(20),
+                ),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    const Icon(
+                      Icons.shield,
+                      color: Color(0xff1458a3),
+                      size: 16,
+                    ),
+                    const SizedBox(width: 6),
+                    const Text(
+                      "Admin",
+                      style: TextStyle(
+                        color: Color(0xff1458a3),
+                        fontSize: 12,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        );
+      },
     );
   }
 }

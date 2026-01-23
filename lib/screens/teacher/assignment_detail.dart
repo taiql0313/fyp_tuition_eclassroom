@@ -3,6 +3,10 @@ import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/services.dart';
+import 'dart:io';
+import 'dart:convert'; // For Base64 decoding
+import 'package:path_provider/path_provider.dart';
+import 'package:open_file/open_file.dart';
 
 class TeacherAssignmentDetailPage extends StatefulWidget {
   final Map<String, dynamic> assignmentData;
@@ -305,12 +309,27 @@ class _TeacherAssignmentDetailPageState extends State<TeacherAssignmentDetailPag
           else
             ...fileAttachments.asMap().entries.map((entry) {
               final index = entry.key;
-              final fileUrl = entry.value.toString();
-              final fileName = _extractFileNameFromUrl(fileUrl);
-              return Padding(
-                padding: EdgeInsets.only(bottom: index < fileCount - 1 ? 12 : 0),
-                child: _buildFileItem(fileName, fileUrl),
-              );
+              final fileData = entry.value;
+              
+              // Check if it's new format (Map with Base64) or old format (URL string)
+              if (fileData is Map<String, dynamic>) {
+                // New format: Base64 stored in Firestore
+                final fileName = fileData['fileName'] as String? ?? 'Attachment';
+                final fileSize = fileData['fileSize'] as int? ?? 0;
+                final base64Data = fileData['base64Data'] as String? ?? '';
+                return Padding(
+                  padding: EdgeInsets.only(bottom: index < fileCount - 1 ? 12 : 0),
+                  child: _buildFileItemNewFormat(fileName, fileSize, base64Data),
+                );
+              } else {
+                // Old format: URL string (for backward compatibility)
+                final fileUrl = fileData.toString();
+                final fileName = _extractFileNameFromUrl(fileUrl);
+                return Padding(
+                  padding: EdgeInsets.only(bottom: index < fileCount - 1 ? 12 : 0),
+                  child: _buildFileItem(fileName, fileUrl),
+                );
+              }
             }),
         ],
       ),
@@ -335,6 +354,177 @@ class _TeacherAssignmentDetailPageState extends State<TeacherAssignmentDetailPag
     } catch (e) {
       return 'Attachment';
     }
+  }
+
+  // Download file from Base64 data
+  Future<void> _downloadFileFromBase64(String fileName, String base64Data) async {
+    try {
+      // Show loading indicator
+      showDialog(
+        context: context,
+        barrierDismissible: false,
+        builder: (context) => const Center(
+          child: CircularProgressIndicator(),
+        ),
+      );
+
+      // Decode Base64
+      final bytes = base64Decode(base64Data);
+
+      // Get download directory
+      final directory = await getApplicationDocumentsDirectory();
+      final filePath = '${directory.path}/$fileName';
+      final file = File(filePath);
+
+      // Write file
+      await file.writeAsBytes(bytes);
+
+      // Close loading indicator
+      if (mounted) {
+        Navigator.pop(context);
+      }
+
+      // Open file
+      final result = await OpenFile.open(filePath);
+
+      if (mounted) {
+        if (result.type != ResultType.done) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text('File saved to: $filePath'),
+              duration: const Duration(seconds: 3),
+            ),
+          );
+        } else {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('File downloaded and opened successfully!'),
+              backgroundColor: Colors.green,
+            ),
+          );
+        }
+      }
+    } catch (e) {
+      if (mounted) {
+        Navigator.pop(context); // Close loading indicator
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Error downloading file: $e'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    }
+  }
+
+  // Format file size
+  String _formatFileSize(int bytes) {
+    if (bytes < 1024) return '$bytes B';
+    if (bytes < 1024 * 1024) return '${(bytes / 1024).toStringAsFixed(1)} KB';
+    return '${(bytes / 1024 / 1024).toStringAsFixed(2)} MB';
+  }
+
+  // Build file item for new format (Base64)
+  Widget _buildFileItemNewFormat(String fileName, int fileSize, String base64Data) {
+    // Determine file icon based on extension
+    IconData fileIcon = Icons.insert_drive_file;
+    Color iconColor = Colors.grey;
+    
+    final lowerFileName = fileName.toLowerCase();
+    if (lowerFileName.endsWith('.pdf')) {
+      fileIcon = Icons.picture_as_pdf;
+      iconColor = Colors.red;
+    } else if (lowerFileName.endsWith('.doc') || lowerFileName.endsWith('.docx')) {
+      fileIcon = Icons.description;
+      iconColor = Colors.blue;
+    } else if (lowerFileName.endsWith('.jpg') || lowerFileName.endsWith('.jpeg') || 
+               lowerFileName.endsWith('.png') || lowerFileName.endsWith('.gif')) {
+      fileIcon = Icons.image;
+      iconColor = Colors.purple;
+    } else if (lowerFileName.endsWith('.zip') || lowerFileName.endsWith('.rar') || 
+               lowerFileName.endsWith('.7z')) {
+      fileIcon = Icons.folder_zip;
+      iconColor = Colors.orange;
+    }
+
+    return Builder(
+      builder: (context) => InkWell(
+        onTap: () async {
+          if (_isTeacher) {
+            // Teacher: Show file info
+            showDialog(
+              context: context,
+              builder: (context) => AlertDialog(
+                title: const Text('File Information'),
+                content: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text('Name: $fileName'),
+                    const SizedBox(height: 8),
+                    Text('Size: ${_formatFileSize(fileSize)}'),
+                    const SizedBox(height: 8),
+                    Text('Format: Base64 (Firestore)'),
+                  ],
+                ),
+                actions: [
+                  TextButton(
+                    onPressed: () => Navigator.pop(context),
+                    child: const Text('Close'),
+                  ),
+                ],
+              ),
+            );
+          } else {
+            // Student: Download file
+            await _downloadFileFromBase64(fileName, base64Data);
+          }
+        },
+        child: Container(
+          padding: const EdgeInsets.all(12),
+          decoration: BoxDecoration(
+            border: Border.all(color: Colors.grey.shade200),
+            borderRadius: BorderRadius.circular(12),
+          ),
+          child: Row(
+            children: [
+              CircleAvatar(
+                backgroundColor: iconColor.withOpacity(0.1),
+                child: Icon(fileIcon, color: iconColor, size: 24),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      fileName,
+                      style: const TextStyle(
+                        fontWeight: FontWeight.w600,
+                        fontSize: 14,
+                      ),
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      _formatFileSize(fileSize),
+                      style: TextStyle(
+                        color: Colors.grey.shade600,
+                        fontSize: 12,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              Icon(
+                _isTeacher ? Icons.info_outline : Icons.download,
+                color: Colors.grey.shade600,
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
   }
 
   Widget _buildFileItem(String fileName, String fileUrl) {
@@ -372,11 +562,10 @@ class _TeacherAssignmentDetailPageState extends State<TeacherAssignmentDetailPag
               ),
             );
           } else {
-            // TODO: Implement file download functionality / 待实现：文件下载功能
-            // This will download the file from Firebase Storage
+            // Download file functionality
             ScaffoldMessenger.of(context).showSnackBar(
               const SnackBar(
-                content: Text("Download functionality coming soon"),
+                content: Text("Please use the new file format for downloads"),
                 duration: Duration(seconds: 2),
               ),
             );

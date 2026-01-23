@@ -5,6 +5,7 @@ import 'package:intl/intl.dart';
 
 import '../../routes.dart';
 import 'create_announcement_page.dart';
+import 'create_quiz.dart';
 
 class SubjectDetailPage extends StatefulWidget {
   // These are the "Inputs" from the Dashboard
@@ -283,57 +284,143 @@ class _SubjectDetailPageState extends State<SubjectDetailPage> {
   // --- TAB 2: CLASSWORK (Updated for Assignments Collection) ---
   // --- TAB 2: CLASSWORK (Styled like the reference image) ---
   Widget _buildClassworkTab() {
+    // Stream both assignments and quizzes for this class
     return StreamBuilder<QuerySnapshot>(
       stream: FirebaseFirestore.instance
           .collection('assignments')
           .where('classId', isEqualTo: widget.classId)
-      // Note: Ensure you have an index in Firestore if using orderBy
           .snapshots(),
-      builder: (context, snapshot) {
-        if (snapshot.connectionState == ConnectionState.waiting) {
-          return const Center(child: CircularProgressIndicator());
-        }
-
-        if (!snapshot.hasData || snapshot.data!.docs.isEmpty) {
-          return _buildEmptyState("No assignments posted.", Icons.assignment_outlined);
-        }
-
-        return ListView.builder(
-          padding: const EdgeInsets.all(16),
-          itemCount: snapshot.data!.docs.length,
-            // Inside _buildClassworkTab -> ListView.builder
-            // Inside _buildClassworkTab -> ListView.builder
-            // Inside _buildClassworkTab -> ListView.builder
-            itemBuilder: (context, index) {
-              var task = snapshot.data!.docs[index].data() as Map<String, dynamic>;
-              String assignmentId = snapshot.data!.docs[index].id; // Unique ID for this assignment
-
-              // Formatting the date for display
-              String formattedDate = "No Date";
-              if (task['dueDate'] != null && task['dueDate'] is Timestamp) {
-                formattedDate = DateFormat('MMM d, y').format((task['dueDate'] as Timestamp).toDate());
-              }
-
-              return InkWell(
-                onTap: () {
-                  // NAVIGATE TO DETAIL
-                  Navigator.pushNamed(
-                    context,
-                    Routes.assignmentDetail,
-                    arguments: {
-                      'assignmentData': task,
-                      'assignmentId': assignmentId,
-                    },
-                  );
-                },
-                child: _buildAssignmentCard(
-                    task['title'] ?? 'Untitled',
-                    formattedDate,
-                    task['points']?.toString() ?? '100',
-                    task['status'] ?? 'Assigned'
-                ),
-              );
+      builder: (context, assignmentsSnapshot) {
+        return StreamBuilder<QuerySnapshot>(
+          stream: FirebaseFirestore.instance
+              .collection('quizzes')
+              .where('classId', isEqualTo: widget.classId)
+              .snapshots(),
+          builder: (context, quizzesSnapshot) {
+            if (assignmentsSnapshot.connectionState == ConnectionState.waiting ||
+                quizzesSnapshot.connectionState == ConnectionState.waiting) {
+              return const Center(child: CircularProgressIndicator());
             }
+
+            // Combine assignments and quizzes
+            final List<Map<String, dynamic>> allItems = [];
+            
+            // Add assignments
+            if (assignmentsSnapshot.hasData) {
+              for (var doc in assignmentsSnapshot.data!.docs) {
+                allItems.add({
+                  'type': 'assignment',
+                  'id': doc.id,
+                  'data': doc.data() as Map<String, dynamic>,
+                });
+              }
+            }
+            
+            // Add quizzes
+            if (quizzesSnapshot.hasData) {
+              for (var doc in quizzesSnapshot.data!.docs) {
+                allItems.add({
+                  'type': 'quiz',
+                  'id': doc.id,
+                  'data': doc.data() as Map<String, dynamic>,
+                });
+              }
+            }
+
+            // Sort by createdAt (newest first)
+            allItems.sort((a, b) {
+              final aData = a['data'] as Map<String, dynamic>;
+              final bData = b['data'] as Map<String, dynamic>;
+              
+              Timestamp? aTime = aData['createdAt'] as Timestamp?;
+              Timestamp? bTime = bData['createdAt'] as Timestamp?;
+              
+              if (aTime == null && bTime == null) return 0;
+              if (aTime == null) return 1;
+              if (bTime == null) return -1;
+              
+              return bTime.compareTo(aTime); // Descending order
+            });
+
+            if (allItems.isEmpty) {
+              return _buildEmptyState("No assignments or quizzes posted.", Icons.assignment_outlined);
+            }
+
+            return ListView.builder(
+              padding: const EdgeInsets.all(16),
+              itemCount: allItems.length,
+              itemBuilder: (context, index) {
+                final item = allItems[index];
+                final type = item['type'] as String;
+                final itemId = item['id'] as String;
+                final itemData = item['data'] as Map<String, dynamic>;
+
+                if (type == 'assignment') {
+                  // Formatting the date for display
+                  String formattedDate = "No Date";
+                  if (itemData['dueDate'] != null && itemData['dueDate'] is Timestamp) {
+                    formattedDate = DateFormat('MMM d, y').format((itemData['dueDate'] as Timestamp).toDate());
+                  }
+
+                  return InkWell(
+                    onTap: () {
+                      // NAVIGATE TO ASSIGNMENT DETAIL
+                      Navigator.pushNamed(
+                        context,
+                        Routes.assignmentDetail,
+                        arguments: {
+                          'assignmentData': itemData,
+                          'assignmentId': itemId,
+                        },
+                      );
+                    },
+                    child: _buildAssignmentCard(
+                      itemData['title'] ?? 'Untitled',
+                      formattedDate,
+                      itemData['points']?.toString() ?? '100',
+                      itemData['status'] ?? 'Assigned',
+                    ),
+                  );
+                } else {
+                  // Quiz card
+                  String formattedDate = "No Date";
+                  if (itemData['createdAt'] != null && itemData['createdAt'] is Timestamp) {
+                    formattedDate = DateFormat('MMM d, y').format((itemData['createdAt'] as Timestamp).toDate());
+                  }
+
+                  final questions = itemData['questions'] as List<dynamic>? ?? [];
+                  final questionCount = questions.length;
+
+                  return InkWell(
+                    onTap: () {
+                      // Navigate to quiz answer page for students, or quiz detail for teachers
+                      if (_isTeacher) {
+                        // TODO: Navigate to quiz detail/edit page for teachers
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          const SnackBar(content: Text("Quiz management page coming soon")),
+                        );
+                      } else {
+                        // Navigate to answer quiz page for students
+                        Navigator.pushNamed(
+                          context,
+                          Routes.studentAnswerQuiz,
+                          arguments: {
+                            'quizId': itemId,
+                            'quizData': itemData,
+                          },
+                        );
+                      }
+                    },
+                    child: _buildQuizCard(
+                      itemData['title'] ?? 'Untitled Quiz',
+                      formattedDate,
+                      questionCount.toString(),
+                    ),
+                  );
+                }
+              },
+            );
+          },
         );
       },
     );
@@ -396,9 +483,17 @@ class _SubjectDetailPageState extends State<SubjectDetailPage> {
           ),
           const SizedBox(height: 12),
           // Assignment Title
-          Text(
-            title,
-            style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: Colors.black87),
+          Row(
+            children: [
+              const Icon(Icons.assignment_outlined, size: 20, color: Colors.blue),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Text(
+                  title,
+                  style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: Colors.black87),
+                ),
+              ),
+            ],
           ),
           const SizedBox(height: 16),
           // Footer Row: Due Date and Points
@@ -417,6 +512,91 @@ class _SubjectDetailPageState extends State<SubjectDetailPage> {
                   const Icon(Icons.assignment_turned_in_outlined, size: 16, color: Colors.grey),
                   const SizedBox(width: 6),
                   Text("$points pts", style: const TextStyle(color: Colors.grey)),
+                ],
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildQuizCard(String title, String createdDate, String questionCount) {
+    return Container(
+      margin: const EdgeInsets.only(bottom: 16),
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(16),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.05),
+            blurRadius: 10,
+            offset: const Offset(0, 4),
+          ),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          // Header Row: Subject Name & Quiz Badge
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              Row(
+                children: [
+                  const CircleAvatar(radius: 4, backgroundColor: Colors.purple), // Subject dot
+                  const SizedBox(width: 8),
+                  Text(
+                    widget.classData['className'] ?? 'Subject',
+                    style: const TextStyle(color: Colors.grey, fontWeight: FontWeight.w500),
+                  ),
+                ],
+              ),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+                decoration: BoxDecoration(
+                  color: Colors.purple.shade50,
+                  borderRadius: BorderRadius.circular(20),
+                ),
+                child: const Text(
+                  'Quiz',
+                  style: TextStyle(color: Colors.purple, fontWeight: FontWeight.bold, fontSize: 12),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 12),
+          // Quiz Title
+          Row(
+            children: [
+              const Icon(Icons.quiz_outlined, size: 20, color: Colors.purple),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Text(
+                  title,
+                  style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: Colors.black87),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 16),
+          // Footer Row: Created Date and Question Count
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              Row(
+                children: [
+                  const Icon(Icons.calendar_today_outlined, size: 16, color: Colors.grey),
+                  const SizedBox(width: 6),
+                  Text("Created: $createdDate", style: const TextStyle(color: Colors.grey)),
+                ],
+              ),
+              Row(
+                children: [
+                  const Icon(Icons.help_outline, size: 16, color: Colors.grey),
+                  const SizedBox(width: 6),
+                  Text("$questionCount questions", style: const TextStyle(color: Colors.grey)),
                 ],
               ),
             ],
@@ -759,7 +939,10 @@ class _SubjectDetailPageState extends State<SubjectDetailPage> {
           ListTile(
             leading: const Icon(Icons.assignment, color: Colors.blue),
             title: const Text('New Assignment'),
-            onTap: () => Navigator.pushNamed(context, Routes.createAssignment, arguments: widget.classId),
+            onTap: () {
+              Navigator.pop(context);
+              Navigator.pushNamed(context, Routes.createAssignment, arguments: widget.classId);
+            },
           ),
           ListTile(
             leading: const Icon(Icons.announcement, color: Colors.green),
@@ -770,6 +953,19 @@ class _SubjectDetailPageState extends State<SubjectDetailPage> {
                 context,
                 MaterialPageRoute(
                   builder: (_) => CreateAnnouncementPage(classId: widget.classId),
+                ),
+              );
+            },
+          ),
+          ListTile(
+            leading: const Icon(Icons.quiz, color: Colors.purple),
+            title: const Text('New Quiz'),
+            onTap: () {
+              Navigator.pop(context);
+              Navigator.push(
+                context,
+                MaterialPageRoute(
+                  builder: (_) => CreateQuizPage(classId: widget.classId),
                 ),
               );
             },

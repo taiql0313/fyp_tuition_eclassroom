@@ -1,10 +1,10 @@
 import 'package:file_picker/file_picker.dart';
-import 'package:firebase_storage/firebase_storage.dart';
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:intl/intl.dart'; // Required for date formatting
 import 'dart:io';
+import 'dart:convert'; // For Base64 encoding
 
 class CreateAssignmentPage extends StatefulWidget {
 
@@ -24,6 +24,20 @@ class _CreateAssignmentPageState extends State<CreateAssignmentPage> {
 
   DateTime? _selectedDate;
   bool _isLoading = false;
+  Map<String, String> _uploadProgress = {}; // Track upload progress per file
+
+  // Supported file types
+  static const List<String> _supportedExtensions = [
+    '.zip', '.rar', '.7z', // Archives
+    '.pdf', // Documents
+    '.doc', '.docx', '.xls', '.xlsx', '.ppt', '.pptx', // Office
+    '.jpg', '.jpeg', '.png', '.gif', '.bmp', '.webp', // Images
+    '.txt', '.md', // Text
+    '.mp4', '.avi', '.mov', // Videos (small ones)
+  ];
+
+  // Maximum file size: 700KB (716,800 bytes)
+  static const int _maxFileSize = 716 * 1024; // 700KB
 
   // --- FUNCTION: SELECT DATE / 选择日期 ---
   Future<void> _pickDate() async {
@@ -38,71 +52,168 @@ class _CreateAssignmentPageState extends State<CreateAssignmentPage> {
     }
   }
 
+  // Check if file type is supported
+  bool _isFileTypeSupported(String fileName) {
+    final extension = fileName.toLowerCase();
+    return _supportedExtensions.any((ext) => extension.endsWith(ext));
+  }
+
+  // Get MIME type from file extension
+  String _getMimeType(String fileName) {
+    final extension = fileName.toLowerCase();
+    if (extension.endsWith('.zip')) return 'application/zip';
+    if (extension.endsWith('.rar')) return 'application/x-rar-compressed';
+    if (extension.endsWith('.7z')) return 'application/x-7z-compressed';
+    if (extension.endsWith('.pdf')) return 'application/pdf';
+    if (extension.endsWith('.doc')) return 'application/msword';
+    if (extension.endsWith('.docx')) return 'application/vnd.openxmlformats-officedocument.wordprocessingml.document';
+    if (extension.endsWith('.xls')) return 'application/vnd.ms-excel';
+    if (extension.endsWith('.xlsx')) return 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
+    if (extension.endsWith('.ppt')) return 'application/vnd.ms-powerpoint';
+    if (extension.endsWith('.pptx')) return 'application/vnd.openxmlformats-officedocument.presentationml.presentation';
+    if (extension.endsWith('.jpg') || extension.endsWith('.jpeg')) return 'image/jpeg';
+    if (extension.endsWith('.png')) return 'image/png';
+    if (extension.endsWith('.gif')) return 'image/gif';
+    if (extension.endsWith('.bmp')) return 'image/bmp';
+    if (extension.endsWith('.webp')) return 'image/webp';
+    if (extension.endsWith('.txt')) return 'text/plain';
+    if (extension.endsWith('.md')) return 'text/markdown';
+    if (extension.endsWith('.mp4')) return 'video/mp4';
+    if (extension.endsWith('.avi')) return 'video/x-msvideo';
+    if (extension.endsWith('.mov')) return 'video/quicktime';
+    return 'application/octet-stream';
+  }
+
+  // Convert file to Base64
+  Future<String> _fileToBase64(File file) async {
+    final bytes = await file.readAsBytes();
+    return base64Encode(bytes);
+  }
+
   // --- FUNCTION: UPLOAD ASSIGNMENT / 上传作业 ---
   Future<void> _uploadAssignment() async {
-
-    if (_selectedFiles.isEmpty) {
-      print("DEBUG: Warning - _selectedFiles is empty. Nothing will be uploaded.");
-    } else {
-      print("DEBUG: Preparing to upload ${_selectedFiles.length} files.");
-    }
-
     if (_titleController.text.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Title is empty")));
       return;
     }
 
+    if (_selectedFiles.isEmpty) {
+      // Allow creating assignment without files
+      await _saveAssignmentToFirestore([]);
+      return;
+    }
+
     setState(() => _isLoading = true);
-    List<String> fileUrls = [];
+    _uploadProgress.clear();
 
     try {
-      print("DEBUG: Number of files to upload: ${_selectedFiles.length}");
+      List<Map<String, dynamic>> fileAttachments = [];
 
-      // 1. UPLOAD LOOP / 上传循环
+      // Validate and process each file
       for (var file in _selectedFiles) {
         try {
-          String fileName = "${DateTime.now().millisecondsSinceEpoch}_${file.path.split('/').last}";
+          final fileName = file.path.split('/').last;
+          final fileSize = await file.length();
 
-          // 1. Get Reference / 获取引用
-          Reference storageRef = FirebaseStorage.instance.ref().child('assignments/$fileName');
+          // Check file size
+          if (fileSize > _maxFileSize) {
+            final sizeInMB = (fileSize / 1024 / 1024).toStringAsFixed(2);
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(
+                content: Text(
+                  'File "$fileName" is too large ($sizeInMB MB). Maximum size is 700KB. Please compress the file.',
+                ),
+                backgroundColor: Colors.orange,
+                duration: const Duration(seconds: 5),
+              ),
+            );
+            continue;
+          }
 
-          // 2. Start Upload / 开始上传
-          UploadTask uploadTask = storageRef.putFile(file);
+          // Check file type
+          if (!_isFileTypeSupported(fileName)) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(
+                content: Text('File type not supported: $fileName. Please use supported file types.'),
+                backgroundColor: Colors.orange,
+                duration: const Duration(seconds: 3),
+              ),
+            );
+            continue;
+          }
 
-          // 3. WAIT for the snapshot / 等待快照完成
-          // This is the most important line!
-          TaskSnapshot snapshot = await uploadTask.whenComplete(() => null);
+          // Update progress
+          setState(() {
+            _uploadProgress[fileName] = 'Encoding...';
+          });
 
-          // 4. Now get the URL / 现在获取 URL
-          String url = await snapshot.ref.getDownloadURL();
-          fileUrls.add(url);
+          // Convert to Base64
+          final base64Data = await _fileToBase64(file);
+          final mimeType = _getMimeType(fileName);
 
-          print("DEBUG: Uploaded to $url");
+          // Add to attachments
+          // Note: Cannot use FieldValue.serverTimestamp() inside arrays, so use Timestamp.now() instead
+          fileAttachments.add({
+            'fileName': fileName,
+            'fileType': mimeType,
+            'fileSize': fileSize,
+            'base64Data': base64Data,
+            'uploadedAt': Timestamp.now(), // Use Timestamp.now() instead of FieldValue.serverTimestamp() in arrays
+          });
+
+          setState(() {
+            _uploadProgress[fileName] = 'Done';
+          });
         } catch (e) {
-          print("DEBUG: File upload failed: $e");
+          print("DEBUG: File processing failed for ${file.path}: $e");
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text("Error processing file: $e")),
+          );
         }
       }
 
-      print("DEBUG: Final fileUrls list size: ${fileUrls.length}");
+      if (fileAttachments.isEmpty && _selectedFiles.isNotEmpty) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text("No valid files to upload. Please check file size and type."),
+            backgroundColor: Colors.orange,
+          ),
+        );
+        setState(() => _isLoading = false);
+        return;
+      }
 
-      // 2. SAVE TO FIRESTORE / 保存到 FIRESTORE
-      await FirebaseFirestore.instance.collection('assignments').add({
-        'title': _titleController.text,
-        'instructions': _instructionsController.text,
-        'points': _pointsController.text,
-        'dueDate': _selectedDate != null ? Timestamp.fromDate(_selectedDate!) : null,
-        'classId': widget.classId,
-        'fileAttachments': fileUrls, // <--- THE GOLD GOES HERE
-        'createdAt': FieldValue.serverTimestamp(),
-      });
+      // Save to Firestore
+      await _saveAssignmentToFirestore(fileAttachments);
 
-      Navigator.pop(context);
+      if (mounted) {
+        Navigator.pop(context);
+      }
     } catch (e) {
       print("DEBUG: CRITICAL ERROR: $e");
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text("Error: $e")));
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text("Error: $e")),
+        );
+      }
     } finally {
-      setState(() => _isLoading = false);
+      if (mounted) {
+        setState(() => _isLoading = false);
+      }
     }
+  }
+
+  // Save assignment to Firestore
+  Future<void> _saveAssignmentToFirestore(List<Map<String, dynamic>> fileAttachments) async {
+    await FirebaseFirestore.instance.collection('assignments').add({
+      'title': _titleController.text,
+      'instructions': _instructionsController.text,
+      'points': _pointsController.text,
+      'dueDate': _selectedDate != null ? Timestamp.fromDate(_selectedDate!) : null,
+      'classId': widget.classId,
+      'fileAttachments': fileAttachments, // Array of file objects with Base64 data
+      'createdAt': FieldValue.serverTimestamp(),
+    });
   }
 
   @override
@@ -194,16 +305,45 @@ class _CreateAssignmentPageState extends State<CreateAssignmentPage> {
         Wrap(
           spacing: 8.0,
           children: _selectedFiles.map((file) {
+            final fileName = file.path.split('/').last;
+            final progress = _uploadProgress[fileName];
             return Chip(
-              label: Text(file.path.split('/').last, style: const TextStyle(fontSize: 12)),
+              label: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  if (progress != null && progress != 'Done')
+                    const SizedBox(
+                      width: 12,
+                      height: 12,
+                      child: CircularProgressIndicator(strokeWidth: 2),
+                    ),
+                  if (progress != null && progress != 'Done') const SizedBox(width: 4),
+                  Flexible(
+                    child: Text(
+                      fileName,
+                      style: const TextStyle(fontSize: 12),
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ),
+                ],
+              ),
               onDeleted: () {
                 setState(() {
-                  _selectedFiles.remove(file); // Remove from "Inventory"
+                  _selectedFiles.remove(file);
+                  _uploadProgress.remove(fileName);
                 });
               },
             );
           }).toList(),
         ),
+        if (_selectedFiles.isNotEmpty)
+          Padding(
+            padding: const EdgeInsets.only(top: 8.0),
+            child: Text(
+              'Note: Maximum file size is 700KB. Please compress large files.',
+              style: TextStyle(fontSize: 12, color: Colors.grey.shade600),
+            ),
+          ),
           ],
         ),
       ),

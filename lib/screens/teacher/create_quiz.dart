@@ -3,7 +3,9 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 
 class CreateQuizPage extends StatefulWidget {
-  const CreateQuizPage({super.key});
+  final String? classId; // Optional classId to associate quiz with a class
+  
+  const CreateQuizPage({super.key, this.classId});
 
   @override
   State<CreateQuizPage> createState() => _CreateQuizPageState();
@@ -75,12 +77,19 @@ class _CreateQuizPageState extends State<CreateQuizPage> {
     }).toList();
 
     try {
-      await FirebaseFirestore.instance.collection('quizzes').add({
+      final quizData = {
         'title': _quizTitleController.text,
         'teacherId': userId,
         'createdAt': FieldValue.serverTimestamp(),
         'questions': serializedQuestions,
-      });
+      };
+      
+      // Add classId if provided
+      if (widget.classId != null && widget.classId!.isNotEmpty) {
+        quizData['classId'] = widget.classId!;
+      }
+      
+      await FirebaseFirestore.instance.collection('quizzes').add(quizData);
 
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(

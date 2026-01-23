@@ -47,6 +47,20 @@ class AuthService extends ChangeNotifier {
     required String password,
   }) async {
     await _auth.signInWithEmailAndPassword(email: email, password: password);
+    
+    // Update last login time in Firestore
+    final user = _auth.currentUser;
+    if (user != null) {
+      try {
+        await _fire.collection('users').doc(user.uid).update({
+          'lastLogin': FieldValue.serverTimestamp(),
+        });
+      } catch (e) {
+        // If user document doesn't exist or update fails, continue anyway
+        print('Error updating lastLogin: $e');
+      }
+    }
+    
     notifyListeners();
   }
 
