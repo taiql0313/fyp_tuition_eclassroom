@@ -204,6 +204,23 @@ service cloud.firestore {
         request.resource.data.isRead == true;
     }
 
+    // --- CHAT FILES (stored in Firestore as base64) ---
+    match /chat_files/{fileId} {
+      allow read: if request.auth != null &&
+        (
+          request.auth.uid == get(/databases/$(database)/documents/chats/$(resource.data.chatId)).data.studentId ||
+          request.auth.uid == get(/databases/$(database)/documents/chats/$(resource.data.chatId)).data.teacherId
+        );
+
+      allow create: if request.auth != null &&
+        (
+          request.auth.uid == get(/databases/$(database)/documents/chats/$(request.resource.data.chatId)).data.studentId ||
+          request.auth.uid == get(/databases/$(database)/documents/chats/$(request.resource.data.chatId)).data.teacherId
+        );
+
+      allow update, delete: if request.auth != null && isAdmin();
+    }
+
     // --- OLD CHAT THREADS (KEEP THIS AS BACKUP) ---
     match /chatThreads/{threadId} {
       allow read: if request.auth != null && 
@@ -331,6 +348,22 @@ service cloud.firestore {
       
       // Only admins can delete notifications
       allow delete: if request.auth != null && isAdmin();
+    }
+
+    // --- SYSTEM LOGS COLLECTION ---
+    match /system_logs/{logId} {
+      // Admins can read all logs
+      allow read, list: if request.auth != null && isAdmin();
+
+      // Any authenticated user can create a log entry
+      // Allow unauthenticated failed login attempts for audit
+      allow create: if request.auth != null ||
+        (request.auth == null &&
+         request.resource.data.category == 'Authentication & Access' &&
+         request.resource.data.action == 'Failed Login Attempt');
+
+      // Only admins can update/delete logs
+      allow update, delete: if request.auth != null && isAdmin();
     }
 
   }

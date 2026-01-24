@@ -707,18 +707,83 @@ class _CreateAttendanceCodePageState extends State<CreateAttendanceCodePage> {
 }
 
 // Page to view attendance records for a session
-class AttendanceRecordsPage extends StatelessWidget {
+class AttendanceRecordsPage extends StatefulWidget {
   final String sessionId;
   final String className;
   final String subject;
-  final AttendanceService _attendanceService = AttendanceService();
 
-  AttendanceRecordsPage({
+  const AttendanceRecordsPage({
     super.key,
     required this.sessionId,
     required this.className,
     required this.subject,
   });
+
+  @override
+  State<AttendanceRecordsPage> createState() => _AttendanceRecordsPageState();
+}
+
+class _AttendanceRecordsPageState extends State<AttendanceRecordsPage> {
+  final AttendanceService _attendanceService = AttendanceService();
+  final FirebaseAuth _auth = FirebaseAuth.instance;
+  final FirebaseFirestore _db = FirebaseFirestore.instance;
+  
+  String? _classId;
+  List<Map<String, dynamic>> _allStudents = [];
+  bool _loadingStudents = true;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadSessionAndStudents();
+  }
+
+  Future<void> _loadSessionAndStudents() async {
+    try {
+      // Get session to find classId
+      final sessionDoc = await _db.collection('attendance_sessions').doc(widget.sessionId).get();
+      if (sessionDoc.exists) {
+        final classId = sessionDoc.data()?['classId'] as String?;
+        if (classId != null) {
+          _classId = classId;
+          // Load all students in this class
+          final students = await _attendanceService.getClassStudents(classId);
+          setState(() {
+            _allStudents = students;
+            _loadingStudents = false;
+          });
+        }
+      }
+    } catch (e) {
+      print('Error loading students: $e');
+      setState(() => _loadingStudents = false);
+    }
+  }
+
+  void _showManualAttendanceDialog() {
+    if (_classId == null || _allStudents.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Unable to load students'), backgroundColor: Colors.red),
+      );
+      return;
+    }
+
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (context) => ManualAttendanceSheet(
+        sessionId: widget.sessionId,
+        classId: _classId!,
+        className: widget.className,
+        subject: widget.subject,
+        allStudents: _allStudents,
+        attendanceService: _attendanceService,
+      ),
+    );
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -727,39 +792,33 @@ class AttendanceRecordsPage extends StatelessWidget {
         title: const Text("Attendance Records"),
         backgroundColor: const Color(0xff1458a3),
         foregroundColor: Colors.white,
+        actions: [
+          IconButton(
+            icon: const Icon(Icons.person_add),
+            tooltip: 'Manual Attendance',
+            onPressed: _loadingStudents ? null : _showManualAttendanceDialog,
+          ),
+        ],
+      ),
+      floatingActionButton: FloatingActionButton.extended(
+        onPressed: _loadingStudents ? null : _showManualAttendanceDialog,
+        backgroundColor: const Color(0xff1458a3),
+        icon: const Icon(Icons.edit_note),
+        label: const Text('Mark Attendance'),
       ),
       body: StreamBuilder<List<AttendanceRecord>>(
-        stream: _attendanceService.streamSessionRecords(sessionId),
+        stream: _attendanceService.streamSessionRecords(widget.sessionId),
         builder: (context, snapshot) {
           if (snapshot.connectionState == ConnectionState.waiting) {
             return const Center(child: CircularProgressIndicator());
           }
 
-          if (!snapshot.hasData || snapshot.data!.isEmpty) {
-            return Center(
-              child: Column(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  const Icon(Icons.people_outline, size: 80, color: Colors.grey),
-                  const SizedBox(height: 16),
-                  const Text(
-                    "No attendance records yet",
-                    style: TextStyle(fontSize: 18, color: Colors.grey),
-                  ),
-                  const SizedBox(height: 8),
-                  Text(
-                    "Students can check in using the code",
-                    style: TextStyle(fontSize: 14, color: Colors.grey[600]),
-                  ),
-                ],
-              ),
-            );
-          }
-
-          final records = snapshot.data!;
+          final records = snapshot.data ?? [];
           final presentCount = records.where((r) => r.status == 'present').length;
           final absentCount = records.where((r) => r.status == 'absent').length;
           final excusedCount = records.where((r) => r.status == 'excused').length;
+          final studentTaken = records.where((r) => r.takenBy == 'student').length;
+          final teacherTaken = records.where((r) => r.takenBy == 'teacher').length;
 
           return Column(
             children: [
@@ -775,88 +834,97 @@ class AttendanceRecordsPage extends StatelessWidget {
                   ),
                   borderRadius: BorderRadius.circular(16),
                 ),
-                child: Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceAround,
+                child: Column(
                   children: [
-                    _buildStatItem("Present", presentCount, Colors.green),
-                    _buildStatItem("Absent", absentCount, Colors.red),
-                    _buildStatItem("Excused", excusedCount, Colors.orange),
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceAround,
+                      children: [
+                        _buildStatItem("Present", presentCount, Colors.green),
+                        _buildStatItem("Absent", absentCount, Colors.red),
+                        _buildStatItem("Excused", excusedCount, Colors.orange),
+                      ],
+                    ),
+                    if (records.isNotEmpty) ...[
+                      const SizedBox(height: 12),
+                      const Divider(color: Colors.white24),
+                      const SizedBox(height: 8),
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          _buildSmallTag('Student Check-in: $studentTaken', Colors.blue),
+                          const SizedBox(width: 12),
+                          _buildSmallTag('Teacher Entry: $teacherTaken', Colors.orange),
+                        ],
+                      ),
+                    ],
                   ],
                 ),
               ),
 
               // Records List
-              Expanded(
-                child: ListView.builder(
-                  padding: const EdgeInsets.all(16),
-                  itemCount: records.length,
-                  itemBuilder: (context, index) {
-                    final record = records[index];
-                    final isPresent = record.status == 'present';
-                    final isExcused = record.status == 'excused';
+              if (records.isEmpty)
+                Expanded(
+                  child: Center(
+                    child: Column(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        const Icon(Icons.people_outline, size: 80, color: Colors.grey),
+                        const SizedBox(height: 16),
+                        const Text(
+                          "No attendance records yet",
+                          style: TextStyle(fontSize: 18, color: Colors.grey),
+                        ),
+                        const SizedBox(height: 8),
+                        Text(
+                          "Students can check in or tap 'Mark Attendance' to manually mark",
+                          style: TextStyle(fontSize: 14, color: Colors.grey[600]),
+                          textAlign: TextAlign.center,
+                        ),
+                      ],
+                    ),
+                  ),
+                )
+              else
+                Expanded(
+                  child: ListView.builder(
+                    padding: const EdgeInsets.all(16),
+                    itemCount: records.length,
+                    itemBuilder: (context, index) {
+                      final record = records[index];
+                      final isPresent = record.status == 'present';
+                      final isExcused = record.status == 'excused';
+                      final isByTeacher = record.takenBy == 'teacher';
 
-                    return Container(
-                      margin: const EdgeInsets.only(bottom: 12),
-                      decoration: BoxDecoration(
-                        color: Colors.white,
-                        borderRadius: BorderRadius.circular(12),
-                        boxShadow: [
-                          BoxShadow(
-                            color: Colors.grey.withOpacity(0.1),
-                            blurRadius: 4,
-                            offset: const Offset(0, 2),
-                          ),
-                        ],
-                      ),
-                      child: ListTile(
-                        leading: Container(
-                          padding: const EdgeInsets.all(8),
-                          decoration: BoxDecoration(
-                            color: isPresent
-                                ? Colors.green.shade50
-                                : isExcused
-                                    ? Colors.orange.shade50
-                                    : Colors.red.shade50,
-                            borderRadius: BorderRadius.circular(8),
-                          ),
-                          child: Icon(
-                            isPresent
-                                ? Icons.check
-                                : isExcused
-                                    ? Icons.info
-                                    : Icons.close,
-                            color: isPresent
-                                ? Colors.green
-                                : isExcused
-                                    ? Colors.orange
-                                    : Colors.red,
-                          ),
+                      return Container(
+                        margin: const EdgeInsets.only(bottom: 12),
+                        decoration: BoxDecoration(
+                          color: Colors.white,
+                          borderRadius: BorderRadius.circular(12),
+                          boxShadow: [
+                            BoxShadow(
+                              color: Colors.grey.withOpacity(0.1),
+                              blurRadius: 4,
+                              offset: const Offset(0, 2),
+                            ),
+                          ],
                         ),
-                        title: Text(
-                          record.studentName,
-                          style: const TextStyle(fontWeight: FontWeight.bold),
-                        ),
-                        subtitle: Text(
-                          DateFormat('MMM d, yyyy • h:mm a').format(
-                            TimezoneHelper.toMalaysiaTime(record.timestamp),
-                          ),
-                          style: TextStyle(color: Colors.grey[600], fontSize: 12),
-                        ),
-                        trailing: Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-                          decoration: BoxDecoration(
-                            color: isPresent
-                                ? Colors.green.shade50
-                                : isExcused
-                                    ? Colors.orange.shade50
-                                    : Colors.red.shade50,
-                            borderRadius: BorderRadius.circular(8),
-                          ),
-                          child: Text(
-                            record.status.toUpperCase(),
-                            style: TextStyle(
-                              fontSize: 10,
-                              fontWeight: FontWeight.bold,
+                        child: ListTile(
+                          leading: Container(
+                            padding: const EdgeInsets.all(8),
+                            decoration: BoxDecoration(
+                              color: isPresent
+                                  ? Colors.green.shade50
+                                  : isExcused
+                                      ? Colors.orange.shade50
+                                      : Colors.red.shade50,
+                              borderRadius: BorderRadius.circular(8),
+                            ),
+                            child: Icon(
+                              isPresent
+                                  ? Icons.check
+                                  : isExcused
+                                      ? Icons.info
+                                      : Icons.close,
                               color: isPresent
                                   ? Colors.green
                                   : isExcused
@@ -864,12 +932,62 @@ class AttendanceRecordsPage extends StatelessWidget {
                                       : Colors.red,
                             ),
                           ),
+                          title: Row(
+                            children: [
+                              Text(
+                                record.studentName,
+                                style: const TextStyle(fontWeight: FontWeight.bold),
+                              ),
+                              if (isByTeacher) ...[
+                                const SizedBox(width: 8),
+                                Container(
+                                  padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                                  decoration: BoxDecoration(
+                                    color: Colors.orange.shade100,
+                                    borderRadius: BorderRadius.circular(4),
+                                  ),
+                                  child: const Text(
+                                    'MANUAL',
+                                    style: TextStyle(fontSize: 8, fontWeight: FontWeight.bold, color: Colors.orange),
+                                  ),
+                                ),
+                              ],
+                            ],
+                          ),
+                          subtitle: Text(
+                            DateFormat('MMM d, yyyy • h:mm a').format(
+                              TimezoneHelper.toMalaysiaTime(record.timestamp),
+                            ),
+                            style: TextStyle(color: Colors.grey[600], fontSize: 12),
+                          ),
+                          trailing: Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                            decoration: BoxDecoration(
+                              color: isPresent
+                                  ? Colors.green.shade50
+                                  : isExcused
+                                      ? Colors.orange.shade50
+                                      : Colors.red.shade50,
+                              borderRadius: BorderRadius.circular(8),
+                            ),
+                            child: Text(
+                              record.status.toUpperCase(),
+                              style: TextStyle(
+                                fontSize: 10,
+                                fontWeight: FontWeight.bold,
+                                color: isPresent
+                                    ? Colors.green
+                                    : isExcused
+                                        ? Colors.orange
+                                        : Colors.red,
+                              ),
+                            ),
+                          ),
                         ),
-                      ),
-                    );
-                  },
+                      );
+                    },
+                  ),
                 ),
-              ),
             ],
           );
         },
@@ -882,7 +1000,7 @@ class AttendanceRecordsPage extends StatelessWidget {
       children: [
         Text(
           count.toString(),
-          style: TextStyle(
+          style: const TextStyle(
             fontSize: 24,
             fontWeight: FontWeight.bold,
             color: Colors.white,
@@ -897,6 +1015,304 @@ class AttendanceRecordsPage extends StatelessWidget {
           ),
         ),
       ],
+    );
+  }
+
+  Widget _buildSmallTag(String text, Color color) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+      decoration: BoxDecoration(
+        color: Colors.white.withOpacity(0.2),
+        borderRadius: BorderRadius.circular(12),
+      ),
+      child: Text(
+        text,
+        style: const TextStyle(fontSize: 10, color: Colors.white),
+      ),
+    );
+  }
+}
+
+// Bottom sheet for manual attendance marking
+class ManualAttendanceSheet extends StatefulWidget {
+  final String sessionId;
+  final String classId;
+  final String className;
+  final String subject;
+  final List<Map<String, dynamic>> allStudents;
+  final AttendanceService attendanceService;
+
+  const ManualAttendanceSheet({
+    super.key,
+    required this.sessionId,
+    required this.classId,
+    required this.className,
+    required this.subject,
+    required this.allStudents,
+    required this.attendanceService,
+  });
+
+  @override
+  State<ManualAttendanceSheet> createState() => _ManualAttendanceSheetState();
+}
+
+class _ManualAttendanceSheetState extends State<ManualAttendanceSheet> {
+  final Map<String, String> _studentStatuses = {}; // studentId -> status
+  bool _saving = false;
+
+  @override
+  void initState() {
+    super.initState();
+    // Initialize all students as 'present' by default
+    for (var student in widget.allStudents) {
+      _studentStatuses[student['uid']] = 'present';
+    }
+  }
+
+  Future<void> _saveAttendance() async {
+    final user = FirebaseAuth.instance.currentUser;
+    if (user == null) return;
+
+    setState(() => _saving = true);
+
+    try {
+      final studentNames = <String, String>{};
+      for (var student in widget.allStudents) {
+        final id = student['uid'] as String;
+        final name = (student['displayName'] as String?) ?? 'Student';
+        studentNames[id] = name;
+      }
+
+      await widget.attendanceService.markBulkAttendanceByTeacher(
+        sessionId: widget.sessionId,
+        classId: widget.classId,
+        className: widget.className,
+        subject: widget.subject,
+        studentStatuses: _studentStatuses,
+        teacherId: user.uid,
+        teacherName: user.displayName ?? 'Teacher',
+        studentNames: studentNames,
+      );
+
+      if (mounted) {
+        Navigator.pop(context);
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Attendance saved successfully!'),
+            backgroundColor: Colors.green,
+          ),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Error: $e'), backgroundColor: Colors.red),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _saving = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return DraggableScrollableSheet(
+      initialChildSize: 0.7,
+      minChildSize: 0.5,
+      maxChildSize: 0.95,
+      expand: false,
+      builder: (context, scrollController) => Column(
+        children: [
+          // Header
+          Container(
+            padding: const EdgeInsets.all(16),
+            decoration: BoxDecoration(
+              color: Colors.white,
+              borderRadius: const BorderRadius.vertical(top: Radius.circular(20)),
+              boxShadow: [
+                BoxShadow(
+                  color: Colors.grey.withOpacity(0.1),
+                  blurRadius: 4,
+                  offset: const Offset(0, 2),
+                ),
+              ],
+            ),
+            child: Column(
+              children: [
+                Container(
+                  width: 40,
+                  height: 4,
+                  decoration: BoxDecoration(
+                    color: Colors.grey.shade300,
+                    borderRadius: BorderRadius.circular(2),
+                  ),
+                ),
+                const SizedBox(height: 16),
+                Row(
+                  children: [
+                    Container(
+                      padding: const EdgeInsets.all(10),
+                      decoration: BoxDecoration(
+                        color: const Color(0xff1458a3).withOpacity(0.1),
+                        borderRadius: BorderRadius.circular(10),
+                      ),
+                      child: const Icon(Icons.edit_note, color: Color(0xff1458a3)),
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          const Text(
+                            'Manual Attendance',
+                            style: TextStyle(fontWeight: FontWeight.bold, fontSize: 18),
+                          ),
+                          Text(
+                            '${widget.allStudents.length} students in this class',
+                            style: TextStyle(color: Colors.grey.shade600, fontSize: 12),
+                          ),
+                        ],
+                      ),
+                    ),
+                    ElevatedButton(
+                      onPressed: _saving ? null : _saveAttendance,
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: const Color(0xff1458a3),
+                        foregroundColor: Colors.white,
+                      ),
+                      child: _saving
+                          ? const SizedBox(
+                              width: 20,
+                              height: 20,
+                              child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
+                            )
+                          : const Text('Save'),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 12),
+                // Quick actions
+                Row(
+                  children: [
+                    Expanded(
+                      child: OutlinedButton.icon(
+                        onPressed: () {
+                          setState(() {
+                            for (var student in widget.allStudents) {
+                              _studentStatuses[student['uid']] = 'present';
+                            }
+                          });
+                        },
+                        icon: const Icon(Icons.check_circle, size: 16),
+                        label: const Text('All Present'),
+                        style: OutlinedButton.styleFrom(foregroundColor: Colors.green),
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: OutlinedButton.icon(
+                        onPressed: () {
+                          setState(() {
+                            for (var student in widget.allStudents) {
+                              _studentStatuses[student['uid']] = 'absent';
+                            }
+                          });
+                        },
+                        icon: const Icon(Icons.cancel, size: 16),
+                        label: const Text('All Absent'),
+                        style: OutlinedButton.styleFrom(foregroundColor: Colors.red),
+                      ),
+                    ),
+                  ],
+                ),
+              ],
+            ),
+          ),
+
+          // Student list
+          Expanded(
+            child: ListView.builder(
+              controller: scrollController,
+              padding: const EdgeInsets.all(16),
+              itemCount: widget.allStudents.length,
+              itemBuilder: (context, index) {
+                final student = widget.allStudents[index];
+                final studentId = student['uid'] as String;
+                final studentName = student['displayName'] as String;
+                final currentStatus = _studentStatuses[studentId] ?? 'present';
+
+                return Container(
+                  margin: const EdgeInsets.only(bottom: 8),
+                  decoration: BoxDecoration(
+                    color: Colors.white,
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(color: Colors.grey.shade200),
+                  ),
+                  child: Padding(
+                    padding: const EdgeInsets.all(12),
+                    child: Row(
+                      children: [
+                        CircleAvatar(
+                          backgroundColor: const Color(0xff1458a3).withOpacity(0.1),
+                          child: Text(
+                            studentName.isNotEmpty ? studentName[0].toUpperCase() : '?',
+                            style: const TextStyle(
+                              color: Color(0xff1458a3),
+                              fontWeight: FontWeight.bold,
+                            ),
+                          ),
+                        ),
+                        const SizedBox(width: 12),
+                        Expanded(
+                          child: Text(
+                            studentName,
+                            style: const TextStyle(fontWeight: FontWeight.w500),
+                          ),
+                        ),
+                        // Status buttons
+                        Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            _buildStatusButton(studentId, 'present', Icons.check, Colors.green, currentStatus),
+                            const SizedBox(width: 4),
+                            _buildStatusButton(studentId, 'absent', Icons.close, Colors.red, currentStatus),
+                            const SizedBox(width: 4),
+                            _buildStatusButton(studentId, 'excused', Icons.info_outline, Colors.orange, currentStatus),
+                          ],
+                        ),
+                      ],
+                    ),
+                  ),
+                );
+              },
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildStatusButton(String studentId, String status, IconData icon, Color color, String currentStatus) {
+    final isSelected = currentStatus == status;
+    return InkWell(
+      onTap: () {
+        setState(() {
+          _studentStatuses[studentId] = status;
+        });
+      },
+      borderRadius: BorderRadius.circular(8),
+      child: Container(
+        padding: const EdgeInsets.all(8),
+        decoration: BoxDecoration(
+          color: isSelected ? color : Colors.grey.shade100,
+          borderRadius: BorderRadius.circular(8),
+        ),
+        child: Icon(
+          icon,
+          size: 18,
+          color: isSelected ? Colors.white : Colors.grey,
+        ),
+      ),
     );
   }
 }

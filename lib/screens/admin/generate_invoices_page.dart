@@ -45,10 +45,14 @@ class _GenerateInvoicesPageState extends State<GenerateInvoicesPage> {
         .collection('invoices')
         .where('month', isEqualTo: monthStart)
         .get();
-    
-    final existingInvoiceStudentIds = existingInvoices.docs
-        .map((doc) => doc.data()['studentId'] as String)
-        .toSet();
+    final billedClassIdsByStudent = <String, Set<String>>{};
+    for (var doc in existingInvoices.docs) {
+      final invoice = Invoice.fromMap(doc.id, doc.data());
+      billedClassIdsByStudent.putIfAbsent(invoice.studentId, () => <String>{});
+      for (var item in invoice.items) {
+        billedClassIdsByStudent[invoice.studentId]!.add(item.classId);
+      }
+    }
     
     for (var studentDoc in students.docs) {
       final student = AppUser.fromMap(studentDoc.id, studentDoc.data());
@@ -86,23 +90,35 @@ class _GenerateInvoicesPageState extends State<GenerateInvoicesPage> {
       }
 
       if (items.isNotEmpty) {
-        final hasExistingInvoice = existingInvoiceStudentIds.contains(student.uid);
+        final billedClassIds = billedClassIdsByStudent[student.uid] ?? <String>{};
+        final hasExistingInvoice = billedClassIds.isNotEmpty;
+        final missingItems =
+            items.where((item) => !billedClassIds.contains(item.classId)).toList();
+        final missingAmount =
+            missingItems.fold<double>(0.0, (sum, item) => sum + item.price);
+        final canGenerate = missingItems.isNotEmpty;
+
         preview[student.uid] = {
           'studentName': student.displayName,
           'studentEmail': student.email,
-          'totalAmount': totalAmount,
-          'items': items,
-          'classCount': items.length,
+          'totalAmount': canGenerate ? missingAmount : 0.0,
+          'items': missingItems,
+          'classCount': missingItems.length,
           'hasExistingInvoice': hasExistingInvoice,
+          'canGenerate': canGenerate,
+          'existingItemCount': items.length - missingItems.length,
         };
       }
     }
 
     setState(() {
       _previewData = preview;
-      // Only select students who don't have existing invoices by default
-      _selectedStudentIds = Set.from(preview.keys.where((id) => !(preview[id]?['hasExistingInvoice'] ?? false)));
-      _selectAll = _selectedStudentIds.length == preview.length && preview.isNotEmpty;
+      // Only select students who have new charges by default
+      _selectedStudentIds =
+          Set.from(preview.keys.where((id) => preview[id]?['canGenerate'] ?? false));
+      final eligibleCount =
+          preview.values.where((p) => p['canGenerate'] == true).length;
+      _selectAll = eligibleCount > 0 && _selectedStudentIds.length == eligibleCount;
     });
   }
 
@@ -110,9 +126,9 @@ class _GenerateInvoicesPageState extends State<GenerateInvoicesPage> {
     setState(() {
       _selectAll = value ?? false;
       if (_selectAll) {
-        // Only select students who don't have existing invoices
+        // Only select students who have new charges
         _selectedStudentIds = Set.from(_previewData.keys.where((id) {
-          return !(_previewData[id]?['hasExistingInvoice'] ?? false);
+          return _previewData[id]?['canGenerate'] ?? false;
         }));
       } else {
         _selectedStudentIds.clear();
@@ -127,7 +143,9 @@ class _GenerateInvoicesPageState extends State<GenerateInvoicesPage> {
       } else {
         _selectedStudentIds.remove(studentId);
       }
-      _selectAll = _selectedStudentIds.length == _previewData.length;
+      final eligibleCount =
+          _previewData.values.where((p) => p['canGenerate'] == true).length;
+      _selectAll = eligibleCount > 0 && _selectedStudentIds.length == eligibleCount;
     });
   }
 
@@ -176,28 +194,7 @@ class _GenerateInvoicesPageState extends State<GenerateInvoicesPage> {
       return;
     }
 
-    // Check if any selected students already have invoices
-    final studentsWithExistingInvoices = _selectedStudentIds.where((id) {
-      return _previewData[id]?['hasExistingInvoice'] ?? false;
-    }).toList();
-
-    if (studentsWithExistingInvoices.isNotEmpty) {
-      final studentNames = studentsWithExistingInvoices
-          .map((id) => _previewData[id]?['studentName'] ?? 'Unknown')
-          .join(', ');
-      final monthName = DateFormat('MMMM yyyy').format(_selectedMonth);
-      
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(
-            "Cannot generate: Invoice already exists for $monthName for: $studentNames",
-          ),
-          backgroundColor: Colors.red,
-          duration: const Duration(seconds: 5),
-        ),
-      );
-      return;
-    }
+    // Selected students already filtered to those with new charges
 
     final confirm = await showDialog<bool>(
       context: context,
@@ -295,6 +292,8 @@ class _GenerateInvoicesPageState extends State<GenerateInvoicesPage> {
 
   @override
   Widget build(BuildContext context) {
+    final eligibleCount =
+        _previewData.values.where((p) => p['canGenerate'] == true).length;
     return Scaffold(
       appBar: AppBar(
         title: const Text("Generate Invoices"),
@@ -377,8 +376,8 @@ class _GenerateInvoicesPageState extends State<GenerateInvoicesPage> {
                   const SizedBox(width: 8),
                   Expanded(
                     child: Text(
-                      "${_previewData.length} student(s) with enrolled subjects found. "
-                      "${_selectedStudentIds.length} selected.",
+                      "${_previewData.length} student(s) found. "
+                      "$eligibleCount eligible for new charges • ${_selectedStudentIds.length} selected.",
                       style: TextStyle(color: Colors.blue[900], fontSize: 14),
                     ),
                   ),
@@ -415,7 +414,7 @@ class _GenerateInvoicesPageState extends State<GenerateInvoicesPage> {
                               "Select All Students",
                               style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
                             ),
-                            subtitle: Text("${_selectedStudentIds.length} of ${_previewData.length} selected"),
+                            subtitle: Text("${_selectedStudentIds.length} of $eligibleCount selected"),
                             value: _selectAll,
                             onChanged: _toggleSelectAll,
                             controlAffinity: ListTileControlAffinity.leading,
@@ -427,14 +426,17 @@ class _GenerateInvoicesPageState extends State<GenerateInvoicesPage> {
                       final preview = _previewData[studentId]!;
                       final isSelected = _selectedStudentIds.contains(studentId);
                       final hasExistingInvoice = preview['hasExistingInvoice'] as bool? ?? false;
+                      final canGenerate = preview['canGenerate'] as bool? ?? false;
 
                       return Card(
                         margin: const EdgeInsets.only(bottom: 12),
-                        color: hasExistingInvoice ? Colors.orange.shade50 : null,
+                        color: hasExistingInvoice
+                            ? (canGenerate ? Colors.orange.shade50 : Colors.grey.shade100)
+                            : null,
                         child: ExpansionTile(
                           leading: Checkbox(
                             value: isSelected,
-                            onChanged: hasExistingInvoice
+                            onChanged: !canGenerate
                                 ? null // Disable checkbox if invoice already exists
                                 : (value) => _toggleStudent(studentId, value),
                           ),
@@ -450,11 +452,11 @@ class _GenerateInvoicesPageState extends State<GenerateInvoicesPage> {
                                 Container(
                                   padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
                                   decoration: BoxDecoration(
-                                    color: Colors.orange,
+                                    color: canGenerate ? Colors.orange : Colors.grey,
                                     borderRadius: BorderRadius.circular(12),
                                   ),
-                                  child: const Text(
-                                    "Invoice Exists",
+                                  child: Text(
+                                    canGenerate ? "New Class Added" : "Up To Date",
                                     style: TextStyle(
                                       color: Colors.white,
                                       fontSize: 10,
@@ -466,10 +468,14 @@ class _GenerateInvoicesPageState extends State<GenerateInvoicesPage> {
                           ),
                           subtitle: Text(
                             hasExistingInvoice
-                                ? "Invoice already exists for ${DateFormat('MMMM yyyy').format(_selectedMonth)} • ${preview['classCount']} subject(s) • RM ${(preview['totalAmount'] as double).toStringAsFixed(2)}"
+                                ? (canGenerate
+                                    ? "Additional charges for ${DateFormat('MMMM yyyy').format(_selectedMonth)} • ${preview['classCount']} subject(s) • RM ${(preview['totalAmount'] as double).toStringAsFixed(2)}"
+                                    : "All classes already billed for ${DateFormat('MMMM yyyy').format(_selectedMonth)}")
                                 : "${preview['classCount']} subject(s) • RM ${(preview['totalAmount'] as double).toStringAsFixed(2)}",
                             style: TextStyle(
-                              color: hasExistingInvoice ? Colors.orange.shade700 : Colors.grey[600],
+                              color: hasExistingInvoice
+                                  ? (canGenerate ? Colors.orange.shade700 : Colors.grey[600])
+                                  : Colors.grey[600],
                               fontSize: 12,
                             ),
                           ),
@@ -478,7 +484,9 @@ class _GenerateInvoicesPageState extends State<GenerateInvoicesPage> {
                             style: TextStyle(
                               fontWeight: FontWeight.bold,
                               fontSize: 16,
-                              color: hasExistingInvoice ? Colors.orange.shade700 : const Color(0xff1458a3),
+                              color: hasExistingInvoice
+                                  ? (canGenerate ? Colors.orange.shade700 : Colors.grey)
+                                  : const Color(0xff1458a3),
                             ),
                           ),
                           children: [
@@ -492,27 +500,36 @@ class _GenerateInvoicesPageState extends State<GenerateInvoicesPage> {
                                     style: TextStyle(fontWeight: FontWeight.bold),
                                   ),
                                   const SizedBox(height: 8),
-                                  ...(preview['items'] as List<InvoiceItem>).map((item) => Padding(
-                                        padding: const EdgeInsets.only(bottom: 4),
-                                        child: Row(
-                                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                                          children: [
-                                            Expanded(
-                                              child: Text(
-                                                "${item.subjectName} - ${item.className}",
-                                                style: const TextStyle(fontSize: 14),
+                                  if ((preview['items'] as List<InvoiceItem>).isEmpty)
+                                    Padding(
+                                      padding: const EdgeInsets.only(top: 4),
+                                      child: Text(
+                                        "No new classes to bill for this month.",
+                                        style: TextStyle(fontSize: 13, color: Colors.grey[600]),
+                                      ),
+                                    )
+                                  else
+                                    ...(preview['items'] as List<InvoiceItem>).map((item) => Padding(
+                                          padding: const EdgeInsets.only(bottom: 4),
+                                          child: Row(
+                                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                            children: [
+                                              Expanded(
+                                                child: Text(
+                                                  "${item.subjectName} - ${item.className}",
+                                                  style: const TextStyle(fontSize: 14),
+                                                ),
                                               ),
-                                            ),
-                                            Text(
-                                              "RM ${item.price.toStringAsFixed(2)}",
-                                              style: const TextStyle(
-                                                fontSize: 14,
-                                                fontWeight: FontWeight.w500,
+                                              Text(
+                                                "RM ${item.price.toStringAsFixed(2)}",
+                                                style: const TextStyle(
+                                                  fontSize: 14,
+                                                  fontWeight: FontWeight.w500,
+                                                ),
                                               ),
-                                            ),
-                                          ],
-                                        ),
-                                      )),
+                                            ],
+                                          ),
+                                        )),
                                   const Divider(),
                                   Row(
                                     mainAxisAlignment: MainAxisAlignment.spaceBetween,

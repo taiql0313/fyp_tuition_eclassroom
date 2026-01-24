@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
+import 'package:fyp_tuition_eclassroom/utils/timezone_helper.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:fyp_tuition_eclassroom/services/payment_service.dart';
 import 'package:fyp_tuition_eclassroom/models/payment_models.dart';
@@ -102,7 +103,8 @@ class PaymentHistoryPage extends StatelessWidget {
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Text(
-                DateFormat('dd MMM yyyy, h:mm a').format(transaction.createdAt),
+                DateFormat('dd MMM yyyy, h:mm a')
+                    .format(TimezoneHelper.toMalaysiaTime(transaction.createdAt)),
                 style: TextStyle(color: Colors.grey[600], fontSize: 13),
               ),
               const SizedBox(height: 4),
@@ -177,16 +179,37 @@ class PaymentHistoryPage extends StatelessWidget {
                   _detailRow("Transaction ID:", transaction.id),
                   _detailRow("Status:", transaction.status.toUpperCase()),
                   _detailRow("Amount:", "RM ${transaction.amount.toStringAsFixed(2)}"),
+                  if (transaction.paypalAmount != null && transaction.paypalCurrency != null)
+                    _detailRow(
+                      "PayPal Charge:",
+                      "${transaction.paypalCurrency} ${transaction.paypalAmount!.toStringAsFixed(2)}",
+                    ),
+                  if (transaction.exchangeRate != null)
+                    _detailRow("Exchange Rate:", "1 MYR ≈ ${transaction.exchangeRate!.toStringAsFixed(4)} USD"),
                   _detailRow("Payment Method:", transaction.paymentMethod.toUpperCase()),
-                  _detailRow("Date:", DateFormat('dd MMM yyyy, h:mm a').format(transaction.createdAt)),
+                  _detailRow(
+                    "Date:",
+                    DateFormat('dd MMM yyyy, h:mm a')
+                        .format(TimezoneHelper.toMalaysiaTime(transaction.createdAt)),
+                  ),
                   if (transaction.completedAt != null)
-                    _detailRow("Completed:", DateFormat('dd MMM yyyy, h:mm a').format(transaction.completedAt!)),
+                    _detailRow(
+                      "Completed:",
+                      DateFormat('dd MMM yyyy, h:mm a')
+                          .format(TimezoneHelper.toMalaysiaTime(transaction.completedAt!)),
+                    ),
                   if (transaction.paypalOrderId != null)
                     _detailRow("PayPal Order ID:", transaction.paypalOrderId!),
                   if (invoice != null) ...[
                     const Divider(),
-                    _detailRow("Invoice Month:", DateFormat('MMMM yyyy').format(invoice.month)),
-                    _detailRow("Due Date:", DateFormat('dd MMM yyyy').format(invoice.dueDate)),
+                    _detailRow(
+                      "Invoice Month:",
+                      DateFormat('MMMM yyyy').format(TimezoneHelper.toMalaysiaTime(invoice.month)),
+                    ),
+                    _detailRow(
+                      "Due Date:",
+                      DateFormat('dd MMM yyyy').format(TimezoneHelper.toMalaysiaTime(invoice.dueDate)),
+                    ),
                   ],
                   if (transaction.notes != null) ...[
                     const Divider(),
@@ -277,7 +300,11 @@ class PaymentHistoryPage extends StatelessWidget {
                         pw.SizedBox(height: 10),
                         pw.Text('Date:', style: pw.TextStyle(fontSize: 10, color: PdfColors.grey700)),
                         pw.Text(
-                          DateFormat('MMM d, yyyy • h:mm a').format(transaction.completedAt ?? transaction.createdAt),
+                          DateFormat('MMM d, yyyy • h:mm a').format(
+                            TimezoneHelper.toMalaysiaTime(
+                              transaction.completedAt ?? transaction.createdAt,
+                            ),
+                          ),
                           style: const pw.TextStyle(fontSize: 12),
                         ),
                       ],
@@ -302,8 +329,10 @@ class PaymentHistoryPage extends StatelessWidget {
                   style: pw.TextStyle(fontSize: 14, fontWeight: pw.FontWeight.bold),
                 ),
                 pw.SizedBox(height: 10),
-                pw.Text('Invoice Month: ${DateFormat('MMMM yyyy').format(invoice.month)}'),
-                pw.Text('Due Date: ${DateFormat('MMM d, yyyy').format(invoice.dueDate)}'),
+                pw.Text(
+                    'Invoice Month: ${DateFormat('MMMM yyyy').format(TimezoneHelper.toMalaysiaTime(invoice.month))}'),
+                pw.Text(
+                    'Due Date: ${DateFormat('MMM d, yyyy').format(TimezoneHelper.toMalaysiaTime(invoice.dueDate))}'),
                 pw.SizedBox(height: 20),
                 
                 // Subject Breakdown

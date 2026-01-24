@@ -4,6 +4,7 @@ import 'package:flutter/foundation.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:http/http.dart' as http;
+import 'package:geolocator/geolocator.dart';
 import 'package:fyp_tuition_eclassroom/models/user_model.dart';
 
 class AuthService extends ChangeNotifier {
@@ -17,11 +18,230 @@ class AuthService extends ChangeNotifier {
     _auth.authStateChanges().listen((_) => notifyListeners());
   }
 
+  Future<void> _logSystemEvent({
+    required String type,
+    required String category,
+    required String action,
+    required String user,
+    required String role,
+    String? userId,
+    String? details,
+    bool? success,
+    Map<String, String>? clientContext,
+  }) async {
+    try {
+      final payload = <String, dynamic>{
+        'type': type,
+        'category': category,
+        'action': action,
+        'user': user,
+        'role': role,
+        'userId': userId,
+        'details': details ?? '',
+        'success': success,
+        'time': FieldValue.serverTimestamp(),
+      };
+
+      if (clientContext != null) {
+        if ((clientContext['ipAddress'] ?? '').isNotEmpty) {
+          payload['ipAddress'] = clientContext['ipAddress'];
+        }
+        if ((clientContext['device'] ?? '').isNotEmpty) {
+          payload['device'] = clientContext['device'];
+        }
+        if ((clientContext['platform'] ?? '').isNotEmpty) {
+          payload['platform'] = clientContext['platform'];
+        }
+        if ((clientContext['country'] ?? '').isNotEmpty) {
+          payload['country'] = clientContext['country'];
+        }
+        if ((clientContext['region'] ?? '').isNotEmpty) {
+          payload['region'] = clientContext['region'];
+        }
+        if ((clientContext['city'] ?? '').isNotEmpty) {
+          payload['city'] = clientContext['city'];
+        }
+      }
+
+      await _fire.collection('system_logs').add(payload);
+    } catch (e) {
+      // Logging should not break auth flow
+      print('Error writing system log: $e');
+    }
+  }
+
+  String _getPlatformLabel() {
+    if (kIsWeb) return 'Web';
+    switch (defaultTargetPlatform) {
+      case TargetPlatform.android:
+        return 'Android';
+      case TargetPlatform.iOS:
+        return 'iOS';
+      case TargetPlatform.macOS:
+        return 'macOS';
+      case TargetPlatform.windows:
+        return 'Windows';
+      case TargetPlatform.linux:
+        return 'Linux';
+      case TargetPlatform.fuchsia:
+        return 'Fuchsia';
+    }
+  }
+
+  Future<Map<String, String>> _getClientContext() async {
+    final platform = _getPlatformLabel();
+    String? ip;
+    String? city;
+    String? region;
+    String? country;
+    double? latitude;
+    double? longitude;
+
+    // ========== 1. TRY DEVICE GPS ==========
+    if (!kIsWeb) {
+      try {
+        final serviceEnabled = await Geolocator.isLocationServiceEnabled();
+        if (serviceEnabled) {
+          var permission = await Geolocator.checkPermission();
+          if (permission == LocationPermission.denied) {
+            permission = await Geolocator.requestPermission();
+          }
+          if (permission == LocationPermission.whileInUse ||
+              permission == LocationPermission.always) {
+            final position = await Geolocator.getCurrentPosition(
+              desiredAccuracy: LocationAccuracy.low,
+              timeLimit: const Duration(seconds: 5),
+            );
+            latitude = position.latitude;
+            longitude = position.longitude;
+            print('[AuthService] GPS: lat=$latitude, lon=$longitude');
+          } else {
+            print('[AuthService] Location permission denied: $permission');
+          }
+        } else {
+          print('[AuthService] Location service not enabled');
+        }
+      } catch (e) {
+        print('[AuthService] GPS error: $e');
+      }
+    }
+
+    // ========== 2. REVERSE GEOCODE GPS COORDS ==========
+    if (latitude != null && longitude != null) {
+      try {
+        final url =
+            'https://api.bigdatacloud.net/data/reverse-geocode-client?latitude=$latitude&longitude=$longitude&localityLanguage=en';
+        final response = await http
+            .get(Uri.parse(url))
+            .timeout(const Duration(seconds: 5));
+        if (response.statusCode == 200) {
+          final data = json.decode(response.body) as Map<String, dynamic>;
+          city = data['city']?.toString();
+          if (city == null || city.isEmpty) {
+            city = data['locality']?.toString();
+          }
+          region = data['principalSubdivision']?.toString();
+          country = data['countryName']?.toString();
+          print('[AuthService] Reverse geocode: city=$city, region=$region, country=$country');
+        }
+      } catch (e) {
+        print('[AuthService] Reverse geocode error: $e');
+      }
+    }
+
+    // ========== 3. FALLBACK: IP GEOLOCATION (multiple APIs) ==========
+    // Try multiple APIs in case one is rate-limited or blocked
+    final ipApis = [
+      'https://ipapi.co/json/',
+      'https://ipinfo.io/json',
+      'https://ip-api.com/json/',
+    ];
+
+    for (final apiUrl in ipApis) {
+      if (ip != null && ip!.isNotEmpty) break; // Already got IP
+      try {
+        final response = await http
+            .get(Uri.parse(apiUrl))
+            .timeout(const Duration(seconds: 4));
+        if (response.statusCode == 200) {
+          final data = json.decode(response.body) as Map<String, dynamic>;
+          
+          // Different APIs use different field names
+          ip = data['ip']?.toString() ?? data['query']?.toString();
+          
+          // Only use IP-based location if we don't have GPS location
+          if (city == null || city!.isEmpty) {
+            city = data['city']?.toString();
+          }
+          if (region == null || region!.isEmpty) {
+            region = data['region']?.toString() ?? data['regionName']?.toString();
+          }
+          if (country == null || country!.isEmpty) {
+            country = data['country_name']?.toString() ?? 
+                     data['country']?.toString() ??
+                     data['countryName']?.toString();
+          }
+          print('[AuthService] IP API ($apiUrl): ip=$ip, city=$city, region=$region, country=$country');
+        }
+      } catch (e) {
+        print('[AuthService] IP API ($apiUrl) error: $e');
+      }
+    }
+
+    final result = <String, String>{
+      'device': platform,
+      'platform': platform,
+    };
+    
+    if (ip != null && ip.isNotEmpty) result['ipAddress'] = ip;
+    if (city != null && city.isNotEmpty) result['city'] = city;
+    if (region != null && region.isNotEmpty) result['region'] = region;
+    if (country != null && country.isNotEmpty) result['country'] = country;
+    
+    print('[AuthService] Final context: $result');
+    return result;
+  }
+
+  Future<Map<String, String>> _getUserInfo(String uid, {String? fallback}) async {
+    try {
+      final doc = await _fire.collection('users').doc(uid).get();
+      final data = doc.data();
+      if (data == null) {
+        return {'name': fallback ?? uid, 'role': 'unknown'};
+      }
+      final name = data['displayName'] as String? ?? fallback ?? uid;
+      final role = data['role'] as String? ?? 'user';
+      return {'name': name, 'role': role};
+    } catch (_) {
+      return {'name': fallback ?? uid, 'role': 'unknown'};
+    }
+  }
+
+  Future<void> _updateUserStatus(
+    String uid, {
+    bool? isOnline,
+    bool updateLogin = false,
+    bool updateLogout = false,
+  }) async {
+    try {
+      final data = <String, dynamic>{
+        'lastSeen': FieldValue.serverTimestamp(),
+      };
+      if (isOnline != null) data['isOnline'] = isOnline;
+      if (updateLogin) data['lastLogin'] = FieldValue.serverTimestamp();
+      if (updateLogout) data['lastLogout'] = FieldValue.serverTimestamp();
+      await _fire.collection('users').doc(uid).update(data);
+    } catch (e) {
+      print('Error updating user status: $e');
+    }
+  }
+
   Future<void> registerWithEmail({
     required String email,
     required String password,
     required String displayName,
   }) async {
+    final clientContext = await _getClientContext();
     final cred = await _auth.createUserWithEmailAndPassword(
       email: email,
       password: password,
@@ -39,6 +259,19 @@ class AuthService extends ChangeNotifier {
       'createdAt': FieldValue.serverTimestamp(),
     });
 
+    await _updateUserStatus(uid, isOnline: true, updateLogin: true);
+    await _logSystemEvent(
+      type: 'Info',
+      category: 'Authentication & Access',
+      action: 'New User Registered',
+      user: displayName,
+      role: 'student',
+      userId: uid,
+      details: 'Account created successfully.',
+      success: true,
+      clientContext: clientContext,
+    );
+
     notifyListeners();
   }
 
@@ -46,25 +279,60 @@ class AuthService extends ChangeNotifier {
     required String email,
     required String password,
   }) async {
-    await _auth.signInWithEmailAndPassword(email: email, password: password);
-    
-    // Update last login time in Firestore
-    final user = _auth.currentUser;
-    if (user != null) {
-      try {
-        await _fire.collection('users').doc(user.uid).update({
-          'lastLogin': FieldValue.serverTimestamp(),
-        });
-      } catch (e) {
-        // If user document doesn't exist or update fails, continue anyway
-        print('Error updating lastLogin: $e');
+    try {
+      final clientContext = await _getClientContext();
+      await _auth.signInWithEmailAndPassword(email: email, password: password);
+      final user = _auth.currentUser;
+      if (user != null) {
+        await _updateUserStatus(user.uid, isOnline: true, updateLogin: true);
+        final info = await _getUserInfo(user.uid, fallback: user.email);
+        await _logSystemEvent(
+          type: 'Info',
+          category: 'Authentication & Access',
+          action: 'User Login',
+          user: info['name'] ?? user.email ?? user.uid,
+          role: info['role'] ?? 'unknown',
+          userId: user.uid,
+          details: 'Login successful.',
+          success: true,
+          clientContext: clientContext,
+        );
       }
+      notifyListeners();
+    } catch (e) {
+      final clientContext = await _getClientContext();
+      await _logSystemEvent(
+        type: 'Error',
+        category: 'Authentication & Access',
+        action: 'Failed Login Attempt',
+        user: email,
+        role: 'unknown',
+        details: e.toString(),
+        success: false,
+        clientContext: clientContext,
+      );
+      rethrow;
     }
-    
-    notifyListeners();
   }
 
   Future<void> signOut() async {
+    final user = _auth.currentUser;
+    if (user != null) {
+      final info = await _getUserInfo(user.uid, fallback: user.email);
+      final clientContext = await _getClientContext();
+      await _updateUserStatus(user.uid, isOnline: false, updateLogout: true);
+      await _logSystemEvent(
+        type: 'Info',
+        category: 'Authentication & Access',
+        action: 'User Logout',
+        user: info['name'] ?? user.email ?? user.uid,
+        role: info['role'] ?? 'unknown',
+        userId: user.uid,
+        details: 'Logout successful.',
+        success: true,
+        clientContext: clientContext,
+      );
+    }
     await _auth.signOut();
     notifyListeners();
   }
@@ -144,13 +412,26 @@ class AuthService extends ChangeNotifier {
         'createdAt': FieldValue.serverTimestamp(),
       });
 
+      final clientContext = await _getClientContext();
+      await _logSystemEvent(
+        type: 'Info',
+        category: 'Authentication & Access',
+        action: 'Admin Created User',
+        user: currentAdmin.displayName ?? 'Admin',
+        role: 'admin',
+        userId: currentAdmin.uid,
+        details: 'Created $displayName ($role)',
+        success: true,
+        clientContext: clientContext,
+      );
+
       // 6. Sign out the NEW user
       await _auth.signOut();
 
       // 7. Log the ADMIN back in
       // We know this will work now because we verified the password in Step 2.
       try {
-        await _auth.signInWithEmailAndPassword(
+        await signInWithEmail(
           email: adminEmail,
           password: adminPassword,
         );

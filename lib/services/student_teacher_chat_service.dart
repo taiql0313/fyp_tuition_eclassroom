@@ -1,4 +1,7 @@
 // lib/services/student_teacher_chat_service.dart
+import 'dart:convert';
+import 'dart:io';
+import 'dart:typed_data';
 import 'package:cloud_firestore/cloud_firestore.dart';
 
 class StudentTeacherChatService {
@@ -10,6 +13,7 @@ class StudentTeacherChatService {
     required String studentName,
     required String teacherId,
     required String teacherName,
+    required bool startedByStudent,
   }) async {
     try {
       // Check if chat already exists
@@ -35,6 +39,10 @@ class StudentTeacherChatService {
         'lastSenderId': '',
         'unreadCountStudent': 0,
         'unreadCountTeacher': 0,
+        'hiddenForStudent': false,
+        'hiddenForTeacher': false,
+        'lastSeenStudent': startedByStudent ? FieldValue.serverTimestamp() : null,
+        'lastSeenTeacher': startedByStudent ? null : FieldValue.serverTimestamp(),
         'createdAt': FieldValue.serverTimestamp(),
       });
 
@@ -52,8 +60,22 @@ class StudentTeacherChatService {
     required String senderName,
     required String text,
     required bool isStudent, // true if sender is student
+    String messageType = 'text', // 'text', 'image', 'file'
+    String? fileUrl,
+    String? fileName,
+    int? fileSize,
+    String? mimeType,
   }) async {
     try {
+      String previewText;
+      if (messageType == 'image') {
+        previewText = '📷 Photo';
+      } else if (messageType == 'file') {
+        previewText = fileName != null && fileName.isNotEmpty ? '📎 $fileName' : '📎 File';
+      } else {
+        previewText = text.isNotEmpty ? text : 'Message';
+      }
+
       // Add message to subcollection
       await _firestore
           .collection('chats')
@@ -63,6 +85,11 @@ class StudentTeacherChatService {
         'senderId': senderId,
         'senderName': senderName,
         'text': text,
+        'messageType': messageType,
+        'fileUrl': fileUrl,
+        'fileName': fileName,
+        'fileSize': fileSize,
+        'mimeType': mimeType,
         'timestamp': FieldValue.serverTimestamp(),
         'isRead': false,
       });
@@ -75,16 +102,82 @@ class StudentTeacherChatService {
 
       // Update chat with last message and increment unread count for receiver
       await _firestore.collection('chats').doc(chatId).update({
-        'lastMessage': text,
+        'lastMessage': previewText,
         'lastMessageTime': FieldValue.serverTimestamp(),
         'lastSenderId': senderId,
         'unreadCountStudent': isStudent ? currentUnreadStudent : currentUnreadStudent + 1,
         'unreadCountTeacher': isStudent ? currentUnreadTeacher + 1 : currentUnreadTeacher,
+        'hiddenForStudent': false,
+        'hiddenForTeacher': false,
+        isStudent ? 'lastSeenStudent' : 'lastSeenTeacher': FieldValue.serverTimestamp(),
+      });
+
+      // Update sender last seen
+      await _firestore.collection('users').doc(senderId).update({
+        'lastSeen': FieldValue.serverTimestamp(),
       });
     } catch (e) {
       print('StudentTeacherChatService Error (sendMessage): $e');
       rethrow;
     }
+  }
+
+  Future<String> uploadChatFile({
+    required String chatId,
+    required String fileName,
+    String? filePath,
+    Uint8List? fileBytes,
+    String? contentType,
+  }) async {
+    try {
+      final File? file = filePath != null ? File(filePath) : null;
+      if (fileBytes == null && file == null) {
+        throw Exception('No file data provided');
+      }
+
+      final Uint8List bytes = fileBytes ?? await file!.readAsBytes();
+      const maxSize = 1024 * 1024; // 1MB
+      if (bytes.length > maxSize) {
+        throw Exception('File too large. Max size is 1MB.');
+      }
+
+      final base64String = base64Encode(bytes);
+      final sanitizedFileName = fileName.replaceAll(RegExp(r'[^a-zA-Z0-9._-]'), '_');
+      final storedFileName = '${DateTime.now().millisecondsSinceEpoch}_$sanitizedFileName';
+
+      final docRef = await _firestore.collection('chat_files').add({
+        'chatId': chatId,
+        'fileName': storedFileName,
+        'originalFileName': fileName,
+        'fileData': base64String,
+        'fileSize': bytes.length,
+        'contentType': contentType,
+        'uploadedAt': FieldValue.serverTimestamp(),
+      });
+
+      return 'firestore:${docRef.id}';
+    } catch (e) {
+      throw Exception('Error processing file: $e');
+    }
+  }
+
+  Future<Map<String, dynamic>> getChatFileFromFirestore(String fileRef) async {
+    if (!fileRef.startsWith('firestore:')) {
+      throw Exception('Invalid file reference format');
+    }
+    final docId = fileRef.replaceFirst('firestore:', '');
+    final doc = await _firestore.collection('chat_files').doc(docId).get();
+    if (!doc.exists) {
+      throw Exception('File not found in Firestore');
+    }
+    final data = doc.data()!;
+    return {
+      'fileName': data['fileName'] ?? '',
+      'originalFileName': data['originalFileName'] ?? '',
+      'fileData': data['fileData'] ?? '',
+      'fileSize': data['fileSize'] ?? 0,
+      'contentType': data['contentType'],
+    };
   }
 
   // 3. Get all chats for user with unread counts
@@ -95,7 +188,6 @@ class StudentTeacherChatService {
     return _firestore
         .collection('chats')
         .where(field, isEqualTo: userId)
-        .orderBy('lastMessageTime', descending: true)
         .snapshots()
         .asyncMap((snapshot) async {
       if (snapshot.docs.isEmpty) {
@@ -106,6 +198,16 @@ class StudentTeacherChatService {
 
       for (var doc in snapshot.docs) {
         final data = doc.data() as Map<String, dynamic>;
+        final hiddenForStudent = data['hiddenForStudent'] == true;
+        final hiddenForTeacher = data['hiddenForTeacher'] == true;
+
+        if (role == 'student' && hiddenForStudent) {
+          continue;
+        }
+        if (role == 'teacher' && hiddenForTeacher) {
+          continue;
+        }
+
         final lastMessageTime = data['lastMessageTime'];
         final lastSenderId = data['lastSenderId'] as String? ?? '';
 
@@ -122,6 +224,13 @@ class StudentTeacherChatService {
           'lastMessageIsMine': lastSenderId == userId,
         });
       }
+
+      // Sort in memory to avoid composite index requirements
+      chats.sort((a, b) {
+        final aTime = a['lastMessageTime'] as DateTime;
+        final bTime = b['lastMessageTime'] as DateTime;
+        return bTime.compareTo(aTime);
+      });
 
       return chats;
     })
@@ -150,6 +259,11 @@ class StudentTeacherChatService {
           'senderId': data['senderId'] as String? ?? '',
           'senderName': data['senderName'] as String? ?? 'User',
           'text': data['text'] as String? ?? '',
+          'messageType': data['messageType'] as String? ?? 'text',
+          'fileUrl': data['fileUrl'] as String?,
+          'fileName': data['fileName'] as String?,
+          'fileSize': data['fileSize'] as int?,
+          'mimeType': data['mimeType'] as String?,
           'timestamp': (data['timestamp'] as Timestamp?)?.toDate() ?? DateTime.now(),
           'isRead': data['isRead'] as bool? ?? false,
         });
@@ -171,6 +285,7 @@ class StudentTeacherChatService {
       // Reset unread count in chat document
       await _firestore.collection('chats').doc(chatId).update({
         unreadField: 0,
+        role == 'student' ? 'lastSeenStudent' : 'lastSeenTeacher': FieldValue.serverTimestamp(),
       });
 
       // Mark all unread messages as read
@@ -178,14 +293,17 @@ class StudentTeacherChatService {
           .collection('chats')
           .doc(chatId)
           .collection('messages')
-          .where('senderId', isNotEqualTo: currentUserId)
           .where('isRead', isEqualTo: false)
           .get();
 
       if (messages.docs.isNotEmpty) {
         final batch = _firestore.batch();
         for (var doc in messages.docs) {
-          batch.update(doc.reference, {'isRead': true});
+          final data = doc.data();
+          final senderId = data['senderId'] as String? ?? '';
+          if (senderId != currentUserId) {
+            batch.update(doc.reference, {'isRead': true});
+          }
         }
         await batch.commit();
       }

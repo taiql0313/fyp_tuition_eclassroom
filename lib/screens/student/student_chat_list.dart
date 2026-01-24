@@ -1,4 +1,5 @@
 // lib/screens/student/student_chat_list.dart
+import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:timeago/timeago.dart' as timeago;
@@ -16,6 +17,22 @@ class StudentChatListPage extends StatefulWidget {
 class _StudentChatListPageState extends State<StudentChatListPage> {
   final StudentTeacherChatService _chatService = StudentTeacherChatService();
   bool _isStartingNewChat = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _updateLastSeen();
+  }
+
+  Future<void> _updateLastSeen() async {
+    final user = context.read<AuthService>().currentUser;
+    if (user == null) return;
+    try {
+      await FirebaseFirestore.instance.collection('users').doc(user.uid).update({
+        'lastSeen': FieldValue.serverTimestamp(),
+      });
+    } catch (_) {}
+  }
 
   Future<void> _startNewChat() async {
     final user = context.read<AuthService>().currentUser;
@@ -145,6 +162,7 @@ class _StudentChatListPageState extends State<StudentChatListPage> {
             studentName: user.displayName ?? 'Student',
             teacherId: selectedTeacher['id'],
             teacherName: selectedTeacher['name'],
+            startedByStudent: true,
           );
 
           if (!mounted) return;
@@ -159,6 +177,7 @@ class _StudentChatListPageState extends State<StudentChatListPage> {
                 otherUserName: selectedTeacher['name'],
                 otherUserRole: 'teacher',
                 currentUserId: user.uid,
+                currentUserName: user.displayName ?? 'Student',
                 userRole: 'student',
               ),
             ),
@@ -220,12 +239,8 @@ class _StudentChatListPageState extends State<StudentChatListPage> {
         color: Colors.grey.shade50,
         child: StreamBuilder<List<Map<String, dynamic>>>(
           stream: _chatService.getUserChats(user.uid, 'student'),
+          initialData: const [],
           builder: (context, snapshot) {
-            if (snapshot.connectionState == ConnectionState.waiting &&
-                !snapshot.hasData) {
-              return const Center(child: CircularProgressIndicator());
-            }
-
             if (snapshot.hasError) {
               return Center(
                 child: Column(
@@ -461,6 +476,7 @@ class _StudentChatListPageState extends State<StudentChatListPage> {
                               otherUserName: chat['otherName'] as String,
                               otherUserRole: 'teacher',
                               currentUserId: user.uid,
+                              currentUserName: user.displayName ?? 'Student',
                               userRole: 'student',
                             ),
                           ),

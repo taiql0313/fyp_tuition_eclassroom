@@ -136,6 +136,9 @@ class PaymentTransaction {
   final String status; // 'pending', 'completed', 'failed', 'cancelled'
   final String? paypalOrderId; // PayPal order ID if using PayPal
   final String? paypalTransactionId; // PayPal transaction ID
+  final double? paypalAmount; // Amount charged on PayPal (USD)
+  final String? paypalCurrency; // Currency charged on PayPal
+  final double? exchangeRate; // MYR to USD rate used for conversion
   final DateTime createdAt;
   final DateTime? completedAt;
   final String? notes; // Admin notes for manual payments
@@ -150,6 +153,9 @@ class PaymentTransaction {
     this.status = 'pending',
     this.paypalOrderId,
     this.paypalTransactionId,
+    this.paypalAmount,
+    this.paypalCurrency,
+    this.exchangeRate,
     required this.createdAt,
     this.completedAt,
     this.notes,
@@ -166,6 +172,9 @@ class PaymentTransaction {
       status: map['status'] ?? 'pending',
       paypalOrderId: map['paypalOrderId'],
       paypalTransactionId: map['paypalTransactionId'],
+      paypalAmount: (map['paypalAmount'] as num?)?.toDouble(),
+      paypalCurrency: map['paypalCurrency'],
+      exchangeRate: (map['exchangeRate'] as num?)?.toDouble(),
       createdAt: (map['createdAt'] as Timestamp?)?.toDate() ?? DateTime.now(),
       completedAt: (map['completedAt'] as Timestamp?)?.toDate(),
       notes: map['notes'],
@@ -182,6 +191,9 @@ class PaymentTransaction {
       'status': status,
       'paypalOrderId': paypalOrderId,
       'paypalTransactionId': paypalTransactionId,
+      'paypalAmount': paypalAmount,
+      'paypalCurrency': paypalCurrency,
+      'exchangeRate': exchangeRate,
       'createdAt': Timestamp.fromDate(createdAt),
       'completedAt': completedAt != null ? Timestamp.fromDate(completedAt!) : null,
       'notes': notes,

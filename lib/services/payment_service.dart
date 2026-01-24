@@ -23,6 +23,66 @@ class PaymentService {
   static const String paypalClientId = 'AaTDyCy-DX6Q8TyXj8yK-rM6eGxd992oFKZQZ0_CDrhc6q-m-MriUg2rv8XDOt0NMeCgPhQU4HTNxkrj';
   static const String paypalSecret = 'ELmzhCaz7ddMoTc2j2swvfuTlfZ3K66D7y4eyePGUZCw__rO2zWXdkzHkozSZjawemnwkzCPnd_vr3cd';
   static const String paypalBaseUrl = 'https://api.sandbox.paypal.com'; // Sandbox URL
+  static const double _myrToUsdRate = 0.21; // Update as needed (approx 1 MYR -> USD)
+
+  double convertMyrToUsd(double amountMyr) {
+    final converted = amountMyr * _myrToUsdRate;
+    return double.parse(converted.toStringAsFixed(2));
+  }
+
+  Future<Map<String, String>> _getCurrentUserInfo() async {
+    final user = _auth.currentUser;
+    if (user == null) {
+      return {
+        'name': 'System',
+        'role': 'system',
+        'id': '',
+      };
+    }
+
+    try {
+      final doc = await _db.collection('users').doc(user.uid).get();
+      final data = doc.data();
+      final name = data?['displayName'] as String? ?? user.displayName ?? user.email ?? 'User';
+      final role = data?['role'] as String? ?? 'user';
+      return {
+        'name': name,
+        'role': role,
+        'id': user.uid,
+      };
+    } catch (_) {
+      return {
+        'name': user.displayName ?? user.email ?? 'User',
+        'role': 'user',
+        'id': user.uid,
+      };
+    }
+  }
+
+  Future<void> _logPaymentEvent({
+    required String action,
+    required String details,
+    String type = 'Info',
+    bool? success,
+  }) async {
+    final info = await _getCurrentUserInfo();
+    if (info['id']!.isEmpty) return;
+    try {
+      await _db.collection('system_logs').add({
+        'type': type,
+        'category': 'Fees & Payment',
+        'action': action,
+        'user': info['name'],
+        'role': info['role'],
+        'userId': info['id'],
+        'details': details,
+        'success': success,
+        'time': FieldValue.serverTimestamp(),
+      });
+    } catch (e) {
+      print('Error logging payment event: $e');
+    }
+  }
 
   /// Generate monthly invoice for a student based on their enrolled subjects
   Future<Invoice> generateMonthlyInvoice(String studentId, DateTime month) async {
@@ -72,20 +132,76 @@ class PaymentService {
     }
 
     // Calculate due date (2nd week of the month - 14th day)
-    final dueDate = DateTime(month.year, month.month, 14);
+    final baseDueDate = DateTime(month.year, month.month, 14);
 
-    // Check if invoice already exists for this month
+    // Check if invoices already exist for this month
     final monthStart = DateTime(month.year, month.month, 1);
-    final existingInvoice = await _db
+    final existingInvoicesSnapshot = await _db
         .collection(_invoicesCol)
         .where('studentId', isEqualTo: studentId)
         .where('month', isEqualTo: Timestamp.fromDate(monthStart))
-        .limit(1)
         .get();
 
-    if (existingInvoice.docs.isNotEmpty) {
-      final monthName = DateFormat('MMMM yyyy').format(monthStart);
-      throw Exception('Invoice already exists for $monthName. Cannot create duplicate invoice.');
+    if (existingInvoicesSnapshot.docs.isNotEmpty) {
+      final existingInvoices = existingInvoicesSnapshot.docs
+          .map((doc) => Invoice.fromMap(doc.id, doc.data()))
+          .toList();
+
+      final billedClassIds = <String>{};
+      for (var inv in existingInvoices) {
+        for (var item in inv.items) {
+          billedClassIds.add(item.classId);
+        }
+      }
+
+      final missingItems =
+          invoiceItems.where((item) => !billedClassIds.contains(item.classId)).toList();
+
+      if (missingItems.isEmpty) {
+        final monthName = DateFormat('MMMM yyyy').format(monthStart);
+        await _logPaymentEvent(
+          action: 'Invoice Up To Date',
+          details: 'No new classes to bill for $studentId ($monthName).',
+          type: 'Info',
+          success: true,
+        );
+        return existingInvoices.first;
+      }
+
+      final additionalAmount =
+          missingItems.fold<double>(0.0, (sum, item) => sum + item.price);
+
+      // If already past due date in the same month, give 7 days for the new charges
+      final now = DateTime.now();
+      final adjustedDueDate = (now.year == month.year &&
+              now.month == month.month &&
+              now.isAfter(baseDueDate))
+          ? DateTime(now.year, now.month, now.day).add(const Duration(days: 7))
+          : baseDueDate;
+
+      final supplementalInvoice = Invoice(
+        id: '',
+        studentId: studentId,
+        studentName: student.displayName,
+        studentEmail: student.email,
+        month: DateTime(month.year, month.month, 1),
+        totalAmount: additionalAmount,
+        items: missingItems,
+        dueDate: adjustedDueDate,
+        status: 'pending',
+        createdAt: DateTime.now(),
+      );
+
+      final docRef =
+          await _db.collection(_invoicesCol).add(supplementalInvoice.toMap());
+      await _logPaymentEvent(
+        action: 'Supplementary Invoice Created',
+        details: 'Supplementary invoice ${docRef.id} created for ${student.displayName} '
+            '($studentId) with ${missingItems.length} new class(es), '
+            'RM ${additionalAmount.toStringAsFixed(2)}.',
+        success: true,
+      );
+      return Invoice.fromMap(docRef.id, supplementalInvoice.toMap());
     }
 
     // Create new invoice
@@ -97,12 +213,18 @@ class PaymentService {
       month: DateTime(month.year, month.month, 1),
       totalAmount: totalAmount,
       items: invoiceItems,
-      dueDate: dueDate,
+      dueDate: baseDueDate,
       status: 'pending',
       createdAt: DateTime.now(),
     );
 
     final docRef = await _db.collection(_invoicesCol).add(invoice.toMap());
+    await _logPaymentEvent(
+      action: 'Invoice Created',
+      details: 'Invoice ${docRef.id} created for ${student.displayName} ($studentId), '
+          '${DateFormat('MMM yyyy').format(invoice.month)}, RM ${totalAmount.toStringAsFixed(2)}.',
+      success: true,
+    );
     return Invoice.fromMap(docRef.id, invoice.toMap());
   }
 
@@ -312,7 +434,9 @@ class PaymentService {
       // Get access token
       final accessToken = await _getPayPalAccessToken();
 
-      // Create transaction record first
+      final usdAmount = convertMyrToUsd(amount);
+
+      // Create transaction record first (store MYR amount and USD conversion)
       final transaction = PaymentTransaction(
         id: '',
         invoiceId: invoiceId,
@@ -321,14 +445,15 @@ class PaymentService {
         amount: amount,
         paymentMethod: 'paypal',
         status: 'pending',
+        paypalAmount: usdAmount,
+        paypalCurrency: 'USD',
+        exchangeRate: _myrToUsdRate,
         createdAt: DateTime.now(),
       );
 
       final docRef = await _db.collection(_transactionsCol).add(transaction.toMap());
 
-      // Create PayPal order
-      // Note: PayPal Sandbox may not support MYR, using USD for testing
-      // For production, verify if MYR is supported or convert to USD
+      // Create PayPal order (PayPal Sandbox does not support MYR)
       // Return / cancel URLs use a fake domain that we intercept in WebView.
       // They do NOT need to be real pages; we only use them as markers.
       final orderData = {
@@ -336,10 +461,10 @@ class PaymentService {
         'purchase_units': [
           {
             'reference_id': invoiceId,
-            'description': 'Tuition E-Classroom Payment - Invoice $invoiceId',
+            'description': 'Tuition E-Classroom Payment - Invoice $invoiceId (RM ${amount.toStringAsFixed(2)})',
             'amount': {
-              'currency_code': 'USD', // Changed from MYR to USD (PayPal Sandbox supports USD)
-              'value': amount.toStringAsFixed(2), // Amount will be in USD equivalent
+              'currency_code': 'USD',
+              'value': usdAmount.toStringAsFixed(2),
             },
           }
         ],
@@ -384,12 +509,25 @@ class PaymentService {
           'paypalOrderId': orderId,
         });
 
+        await _logPaymentEvent(
+          action: 'PayPal Order Created',
+          details: 'Order $orderId created for invoice $invoiceId. '
+              'RM ${amount.toStringAsFixed(2)} → USD ${usdAmount.toStringAsFixed(2)}.',
+          success: true,
+        );
+
         return {
           'transactionId': docRef.id,
           'orderId': orderId,
           'approvalUrl': approvalUrl,
         };
       } else {
+        await _logPaymentEvent(
+          action: 'PayPal Order Failed',
+          details: 'Failed to create PayPal order for invoice $invoiceId. ${response.body}',
+          type: 'Error',
+          success: false,
+        );
         throw Exception('Failed to create PayPal order: ${response.body}');
       }
     } catch (e) {
@@ -536,6 +674,13 @@ class PaymentService {
             'studentId': transaction.studentId, // Ensure studentId is present for security rules
           });
           
+          await _logPaymentEvent(
+            action: 'Payment Captured',
+            details: 'PayPal payment captured. Invoice $invoiceId marked paid. '
+                'Transaction $transactionId, PayPal ID: ${paypalTransactionId ?? 'n/a'}.',
+            success: true,
+          );
+
           print('Payment capture completed successfully');
         } else {
           throw Exception('PayPal capture returned status: $status (expected COMPLETED)');
@@ -654,6 +799,13 @@ class PaymentService {
       'paymentTransactionId': docRef.id,
       'studentId': studentId, // Ensure studentId is present for security rules
     });
+
+    await _logPaymentEvent(
+      action: 'Manual Payment Recorded',
+      details: 'Invoice $invoiceId marked paid for $studentName ($studentId). '
+          'RM ${amount.toStringAsFixed(2)}.',
+      success: true,
+    );
   }
 
   /// Get payment transactions for a student
@@ -768,6 +920,11 @@ class PaymentService {
             amount: invoice.totalAmount,
             reminderType: 'after_due_date',
           );
+          await _logPaymentEvent(
+            action: 'Reminder Created',
+            details: 'After-due reminder created for invoice ${invoice.id}.',
+            success: true,
+          );
           
           print('Reminder created for invoice ${invoice.id} (after due date)');
         }
@@ -788,6 +945,11 @@ class PaymentService {
         await _db.collection(_invoicesCol).doc(invoice.id).update({
           'status': 'overdue',
         });
+        await _logPaymentEvent(
+          action: 'Invoice Marked Overdue',
+          details: 'Invoice ${invoice.id} status changed to overdue.',
+          success: true,
+        );
       }
 
       // Check if overdue reminder needed (only if we're in the next month or later)
@@ -821,6 +983,11 @@ class PaymentService {
             month: invoice.month,
             amount: invoice.totalAmount,
             reminderType: 'overdue',
+          );
+          await _logPaymentEvent(
+            action: 'Reminder Created',
+            details: 'Overdue reminder created for invoice ${invoice.id}.',
+            success: true,
           );
         }
       }
@@ -920,6 +1087,12 @@ class PaymentService {
       month: invoice.month,
       amount: invoice.totalAmount,
       reminderType: 'manual',
+    );
+
+    await _logPaymentEvent(
+      action: 'Manual Reminder Sent',
+      details: 'Manual reminder sent for invoice ${invoice.id}.',
+      success: true,
     );
   }
 

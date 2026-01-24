@@ -103,6 +103,9 @@ class AttendanceRecord {
   final DateTime timestamp;
   final String status; // 'present', 'absent', 'excused'
   final String? absenceDocumentId; // Link to absence document if excused
+  final String takenBy; // 'student' or 'teacher' - who marked this attendance
+  final String? takenByUserId; // ID of the user who marked attendance
+  final String? takenByUserName; // Name of the user who marked attendance
 
   AttendanceRecord({
     required this.id,
@@ -115,6 +118,9 @@ class AttendanceRecord {
     required this.timestamp,
     required this.status,
     this.absenceDocumentId,
+    this.takenBy = 'student',
+    this.takenByUserId,
+    this.takenByUserName,
   });
 
   factory AttendanceRecord.fromMap(String id, Map<String, dynamic> map) {
@@ -129,6 +135,9 @@ class AttendanceRecord {
       timestamp: (map['timestamp'] as Timestamp?)?.toDate() ?? DateTime.now(),
       status: map['status'] ?? 'absent',
       absenceDocumentId: map['absenceDocumentId'],
+      takenBy: map['takenBy'] ?? 'student',
+      takenByUserId: map['takenByUserId'],
+      takenByUserName: map['takenByUserName'],
     );
   }
 
@@ -143,6 +152,9 @@ class AttendanceRecord {
       'timestamp': Timestamp.fromDate(timestamp),
       'status': status,
       'absenceDocumentId': absenceDocumentId,
+      'takenBy': takenBy,
+      'takenByUserId': takenByUserId,
+      'takenByUserName': takenByUserName,
     };
   }
 }

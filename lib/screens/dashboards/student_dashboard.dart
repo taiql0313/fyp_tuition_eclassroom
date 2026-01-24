@@ -15,6 +15,7 @@ import '../announcement_page.dart';
 import '../student/student_chat_list.dart';
 import '../student/attendance/attendance_page.dart';
 import '../student/payment/payment_page.dart';
+import '../student/notifications/notification_center_page.dart';
 
 class StudentDashboard extends StatefulWidget {
   const StudentDashboard({super.key});
@@ -39,6 +40,7 @@ class _StudentDashboardState extends State<StudentDashboard> {
           // 1. App Bar with Real User Info & New UI Styling
           SliverAppBar(
             actions: [
+              if (user != null) _buildNotificationButton(user.uid),
               IconButton(
                 icon: const Icon(Icons.chat_bubble_outline, color: Colors.white),
                 onPressed: () => Navigator.push(
@@ -143,6 +145,51 @@ class _StudentDashboardState extends State<StudentDashboard> {
           ),
         ],
       ),
+    );
+  }
+
+  Widget _buildNotificationButton(String userId) {
+    final stream = FirebaseFirestore.instance
+        .collection('notifications')
+        .where('userId', isEqualTo: userId)
+        .snapshots();
+
+    return StreamBuilder<QuerySnapshot>(
+      stream: stream,
+      builder: (context, snapshot) {
+        var unreadCount = 0;
+        if (snapshot.hasData) {
+          for (final doc in snapshot.data!.docs) {
+            final data = doc.data() as Map<String, dynamic>;
+            if (data['read'] != true) unreadCount++;
+          }
+        }
+
+        return Stack(
+          children: [
+            IconButton(
+              icon: const Icon(Icons.notifications_none, color: Colors.white),
+              onPressed: () => Navigator.push(
+                context,
+                MaterialPageRoute(builder: (_) => const NotificationCenterPage()),
+              ),
+            ),
+            if (unreadCount > 0)
+              Positioned(
+                right: 8,
+                top: 8,
+                child: Container(
+                  width: 8,
+                  height: 8,
+                  decoration: const BoxDecoration(
+                    color: Colors.red,
+                    shape: BoxShape.circle,
+                  ),
+                ),
+              ),
+          ],
+        );
+      },
     );
   }
 

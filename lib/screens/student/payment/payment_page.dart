@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
+import 'package:fyp_tuition_eclassroom/utils/timezone_helper.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:fyp_tuition_eclassroom/services/payment_service.dart';
@@ -200,6 +201,10 @@ class _PaymentPageState extends State<PaymentPage> {
 
   @override
   Widget build(BuildContext context) {
+    final usdAmount = _nextDueInvoice != null
+        ? _paymentService.convertMyrToUsd(_nextDueInvoice!.totalAmount)
+        : null;
+
     return Scaffold(
       backgroundColor: const Color(0xFFF8F9FA),
       appBar: AppBar(
@@ -266,8 +271,14 @@ class _PaymentPageState extends State<PaymentPage> {
                                     const Text("Next Due Date", style: TextStyle(color: Colors.white70, fontSize: 11)),
                                     const SizedBox(height: 4),
                                     Text(
-                                      DateFormat('MMM d, yyyy').format(_nextDueInvoice!.dueDate),
-                                      style: const TextStyle(color: Colors.white, fontSize: 13, fontWeight: FontWeight.bold),
+                                      DateFormat('MMM d, yyyy').format(
+                                        TimezoneHelper.toMalaysiaTime(_nextDueInvoice!.dueDate),
+                                      ),
+                                      style: const TextStyle(
+                                        color: Colors.white,
+                                        fontSize: 13,
+                                        fontWeight: FontWeight.bold,
+                                      ),
                                     ),
                                   ],
                                 ),
@@ -300,6 +311,14 @@ class _PaymentPageState extends State<PaymentPage> {
                               ),
                           ],
                         ),
+                        if (usdAmount != null)
+                          Padding(
+                            padding: const EdgeInsets.only(top: 12),
+                            child: Text(
+                              "PayPal charges in USD: ~USD ${usdAmount.toStringAsFixed(2)}",
+                              style: const TextStyle(color: Colors.white70, fontSize: 12),
+                            ),
+                          ),
                       ],
                     ),
                   ),
@@ -459,7 +478,8 @@ class _PaymentPageState extends State<PaymentPage> {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Text(
-              DateFormat('MMM d, yyyy • h:mm a').format(transaction.createdAt),
+              DateFormat('MMM d, yyyy • h:mm a')
+                  .format(TimezoneHelper.toMalaysiaTime(transaction.createdAt)),
               style: TextStyle(color: Colors.grey[500], fontSize: 12),
             ),
             const SizedBox(height: 2),
@@ -560,11 +580,11 @@ class _InvoicesPage extends StatelessWidget {
           color: statusColor,
         ),
         title: Text(
-          DateFormat('MMMM yyyy').format(invoice.month),
+          DateFormat('MMMM yyyy').format(TimezoneHelper.toMalaysiaTime(invoice.month)),
           style: const TextStyle(fontWeight: FontWeight.bold),
         ),
         subtitle: Text(
-          "Due: ${DateFormat('MMM d, yyyy').format(invoice.dueDate)}",
+          "Due: ${DateFormat('MMM d, yyyy').format(TimezoneHelper.toMalaysiaTime(invoice.dueDate))}",
           style: TextStyle(color: Colors.grey[600], fontSize: 12),
         ),
         trailing: Column(

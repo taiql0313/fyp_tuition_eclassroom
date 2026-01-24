@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 import 'package:fyp_tuition_eclassroom/services/auth_service.dart';
 import 'package:fyp_tuition_eclassroom/services/user_service.dart';
 import 'package:fyp_tuition_eclassroom/models/user_model.dart';
@@ -43,23 +44,43 @@ class _AdminUserManagementState extends State<AdminUserManagement> {
         foregroundColor: Colors.white,
         title: const Text("User Management", style: TextStyle(fontWeight: FontWeight.w600)),
       ),
-      body: StreamBuilder<List<AppUser>>(
-        stream: _userService.streamUsers(),
-        builder: (context, snapshot) {
-          if (snapshot.connectionState == ConnectionState.waiting) {
+      body: StreamBuilder<User?>(
+        stream: FirebaseAuth.instance.authStateChanges(),
+        builder: (context, authSnapshot) {
+          if (authSnapshot.connectionState == ConnectionState.waiting) {
             return Center(child: CircularProgressIndicator(color: _themeColor));
           }
-          if (snapshot.hasError) {
-            return Center(child: Text('Error: ${snapshot.error}', style: const TextStyle(color: Colors.red)));
+
+          if (authSnapshot.data == null) {
+            return Center(
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  CircularProgressIndicator(color: _themeColor),
+                  const SizedBox(height: 12),
+                  const Text('Re-authenticating...'),
+                ],
+              ),
+            );
           }
 
-          final users = snapshot.data ?? [];
+          return StreamBuilder<List<AppUser>>(
+            stream: _userService.streamUsers(),
+            builder: (context, snapshot) {
+              if (snapshot.connectionState == ConnectionState.waiting) {
+                return Center(child: CircularProgressIndicator(color: _themeColor));
+              }
+              if (snapshot.hasError) {
+                return Center(child: Text('Error: ${snapshot.error}', style: const TextStyle(color: Colors.red)));
+              }
 
-          return SingleChildScrollView(
-            padding: const EdgeInsets.all(20),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
+              final users = snapshot.data ?? [];
+
+              return SingleChildScrollView(
+                padding: const EdgeInsets.all(20),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
                 // --- Summary Card ---
                 Container(
                   padding: const EdgeInsets.all(24),
@@ -191,8 +212,10 @@ class _AdminUserManagementState extends State<AdminUserManagement> {
                       return _buildUserCard(user);
                     },
                   ),
-              ],
-            ),
+                  ],
+                ),
+              );
+            },
           );
         },
       ),

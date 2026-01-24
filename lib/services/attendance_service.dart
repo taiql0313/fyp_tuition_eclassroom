@@ -354,10 +354,126 @@ class AttendanceService {
       subject: subject,
       timestamp: DateTime.now(),
       status: 'present',
+      takenBy: 'student',
+      takenByUserId: studentId,
+      takenByUserName: studentName,
     );
 
     final docRef = await _db.collection(_recordsCol).add(record.toMap());
     return AttendanceRecord.fromMap(docRef.id, record.toMap());
+  }
+
+  /// Mark attendance for a student by teacher (manual)
+  Future<AttendanceRecord> markAttendanceByTeacher({
+    required String sessionId,
+    required String studentId,
+    required String studentName,
+    required String classId,
+    required String className,
+    required String subject,
+    required String status, // 'present', 'absent', 'excused'
+    required String teacherId,
+    required String teacherName,
+  }) async {
+    // Check if already marked
+    final existing = await _db
+        .collection(_recordsCol)
+        .where('sessionId', isEqualTo: sessionId)
+        .where('studentId', isEqualTo: studentId)
+        .limit(1)
+        .get();
+
+    if (existing.docs.isNotEmpty) {
+      // Update existing record
+      final existingDoc = existing.docs.first;
+      await _db.collection(_recordsCol).doc(existingDoc.id).update({
+        'status': status,
+        'takenBy': 'teacher',
+        'takenByUserId': teacherId,
+        'takenByUserName': teacherName,
+        'timestamp': FieldValue.serverTimestamp(),
+      });
+      
+      final updatedDoc = await _db.collection(_recordsCol).doc(existingDoc.id).get();
+      return AttendanceRecord.fromMap(existingDoc.id, updatedDoc.data()!);
+    }
+
+    // Create new record
+    final record = AttendanceRecord(
+      id: '',
+      studentId: studentId,
+      studentName: studentName,
+      sessionId: sessionId,
+      classId: classId,
+      className: className,
+      subject: subject,
+      timestamp: DateTime.now(),
+      status: status,
+      takenBy: 'teacher',
+      takenByUserId: teacherId,
+      takenByUserName: teacherName,
+    );
+
+    final docRef = await _db.collection(_recordsCol).add(record.toMap());
+    return AttendanceRecord.fromMap(docRef.id, record.toMap());
+  }
+
+  /// Mark attendance for multiple students at once (teacher bulk action)
+  Future<void> markBulkAttendanceByTeacher({
+    required String sessionId,
+    required String classId,
+    required String className,
+    required String subject,
+    required Map<String, String> studentStatuses, // studentId -> status
+    required String teacherId,
+    required String teacherName,
+    Map<String, String>? studentNames, // studentId -> name (avoid users get)
+  }) async {
+    final batch = _db.batch();
+    
+    for (var entry in studentStatuses.entries) {
+      final studentId = entry.key;
+      final status = entry.value;
+      final studentName = studentNames?[studentId] ?? 'Unknown';
+      
+      // Check if record exists
+      final existing = await _db
+          .collection(_recordsCol)
+          .where('sessionId', isEqualTo: sessionId)
+          .where('studentId', isEqualTo: studentId)
+          .limit(1)
+          .get();
+
+      if (existing.docs.isNotEmpty) {
+        // Update existing
+        batch.update(_db.collection(_recordsCol).doc(existing.docs.first.id), {
+          'status': status,
+          'takenBy': 'teacher',
+          'takenByUserId': teacherId,
+          'takenByUserName': teacherName,
+          'timestamp': FieldValue.serverTimestamp(),
+        });
+      } else {
+        // Create new
+        final record = AttendanceRecord(
+          id: '',
+          studentId: studentId,
+          studentName: studentName,
+          sessionId: sessionId,
+          classId: classId,
+          className: className,
+          subject: subject,
+          timestamp: DateTime.now(),
+          status: status,
+          takenBy: 'teacher',
+          takenByUserId: teacherId,
+          takenByUserName: teacherName,
+        );
+        batch.set(_db.collection(_recordsCol).doc(), record.toMap());
+      }
+    }
+    
+    await batch.commit();
   }
 
   /// Get attendance records for a student

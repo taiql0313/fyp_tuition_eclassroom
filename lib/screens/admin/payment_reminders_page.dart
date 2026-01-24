@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
+import 'package:fyp_tuition_eclassroom/utils/timezone_helper.dart';
 import 'package:fyp_tuition_eclassroom/services/payment_service.dart';
 import 'package:fyp_tuition_eclassroom/models/payment_models.dart';
 
@@ -242,12 +243,12 @@ class _PaymentRemindersPageState extends State<PaymentRemindersPage> with Single
             // For pending reminders, show reminder date. For sent reminders, only show sent date
             if (isPending)
               Text(
-                "Date: ${DateFormat('MMM d, yyyy • h:mm a').format(reminder.reminderDate)}",
+                "Date: ${DateFormat('MMM d, yyyy • h:mm a').format(TimezoneHelper.toMalaysiaTime(reminder.reminderDate))}",
                 style: TextStyle(color: Colors.grey[600], fontSize: 12),
               )
             else if (reminder.sentAt != null)
               Text(
-                "Sent: ${DateFormat('MMM d, yyyy • h:mm a').format(reminder.sentAt!)}",
+                "Sent: ${DateFormat('MMM d, yyyy • h:mm a').format(TimezoneHelper.toMalaysiaTime(reminder.sentAt!))}",
                 style: TextStyle(color: Colors.grey[600], fontSize: 12),
               ),
           ],
@@ -345,13 +346,26 @@ class _PaymentRemindersPageState extends State<PaymentRemindersPage> with Single
               _detailRow("Student:", reminder.studentName),
               _detailRow("Email:", reminder.studentEmail),
               _detailRow("Type:", _getReminderTypeText(reminder.reminderType)),
-              _detailRow("Date:", DateFormat('MMM d, yyyy • h:mm a').format(reminder.reminderDate)),
+              _detailRow(
+                "Date:",
+                DateFormat('MMM d, yyyy • h:mm a').format(
+                  TimezoneHelper.toMalaysiaTime(reminder.reminderDate),
+                ),
+              ),
               _detailRow("Status:", reminder.sent ? "Sent" : "Pending"),
               if (reminder.sentAt != null)
-                _detailRow("Sent At:", DateFormat('MMM d, yyyy • h:mm a').format(reminder.sentAt!)),
+                _detailRow(
+                  "Sent At:",
+                  DateFormat('MMM d, yyyy • h:mm a').format(
+                    TimezoneHelper.toMalaysiaTime(reminder.sentAt!),
+                  ),
+                ),
               if (invoice != null) ...[
                 const Divider(),
-                _detailRow("Invoice Month:", DateFormat('MMMM yyyy').format(invoice.month)),
+                _detailRow(
+                  "Invoice Month:",
+                  DateFormat('MMMM yyyy').format(TimezoneHelper.toMalaysiaTime(invoice.month)),
+                ),
                 _detailRow("Amount:", "RM ${invoice.totalAmount.toStringAsFixed(2)}"),
                 _detailRow("Status:", invoice.status.toUpperCase()),
               ],
