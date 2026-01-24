@@ -97,16 +97,19 @@ class _CreateAssignmentPageState extends State<CreateAssignmentPage> {
       return;
     }
 
-    if (_selectedFiles.isEmpty) {
-      // Allow creating assignment without files
-      await _saveAssignmentToFirestore([]);
-      return;
-    }
-
     setState(() => _isLoading = true);
     _uploadProgress.clear();
 
     try {
+      if (_selectedFiles.isEmpty) {
+        // Allow creating assignment without files
+        await _saveAssignmentToFirestore([]);
+        if (mounted) {
+          Navigator.pop(context);
+        }
+        return;
+      }
+
       List<Map<String, dynamic>> fileAttachments = [];
 
       // Validate and process each file
@@ -205,12 +208,21 @@ class _CreateAssignmentPageState extends State<CreateAssignmentPage> {
 
   // Save assignment to Firestore
   Future<void> _saveAssignmentToFirestore(List<Map<String, dynamic>> fileAttachments) async {
+    final user = FirebaseAuth.instance.currentUser;
+    if (user == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text("Error: You must be logged in to create an assignment.")),
+      );
+      return;
+    }
+
     await FirebaseFirestore.instance.collection('assignments').add({
       'title': _titleController.text,
       'instructions': _instructionsController.text,
       'points': _pointsController.text,
       'dueDate': _selectedDate != null ? Timestamp.fromDate(_selectedDate!) : null,
       'classId': widget.classId,
+      'teacherId': user.uid,
       'fileAttachments': fileAttachments, // Array of file objects with Base64 data
       'createdAt': FieldValue.serverTimestamp(),
     });

@@ -7,6 +7,9 @@ import 'dart:io';
 import 'dart:convert'; // For Base64 decoding
 import 'package:path_provider/path_provider.dart';
 import 'package:open_file/open_file.dart';
+import 'edit_assignment.dart';
+import 'assignment_submissions.dart';
+import '../student/submit_assignment_page.dart';
 
 class TeacherAssignmentDetailPage extends StatefulWidget {
   final Map<String, dynamic> assignmentData;
@@ -25,11 +28,14 @@ class TeacherAssignmentDetailPage extends StatefulWidget {
 class _TeacherAssignmentDetailPageState extends State<TeacherAssignmentDetailPage> {
   String? _userRole;
   bool _isLoadingRole = true;
+  late Map<String, dynamic> _assignmentData;
 
   @override
   void initState() {
     super.initState();
+    _assignmentData = Map<String, dynamic>.from(widget.assignmentData);
     _fetchUserRole();
+    _refreshAssignmentData();
   }
 
   Future<void> _fetchUserRole() async {
@@ -66,6 +72,22 @@ class _TeacherAssignmentDetailPageState extends State<TeacherAssignmentDetailPag
     }
   }
 
+  Future<void> _refreshAssignmentData() async {
+    try {
+      final doc = await FirebaseFirestore.instance
+          .collection('assignments')
+          .doc(widget.assignmentId)
+          .get();
+      if (doc.exists && doc.data() != null) {
+        setState(() {
+          _assignmentData = doc.data()!;
+        });
+      }
+    } catch (e) {
+      // Ignore refresh errors; keep existing data
+    }
+  }
+
   bool get _isTeacher => _userRole == 'teacher';
 
   @override
@@ -84,9 +106,7 @@ class _TeacherAssignmentDetailPageState extends State<TeacherAssignmentDetailPag
             ? [
                 IconButton(
                   icon: const Icon(Icons.more_vert, color: Colors.black),
-                  onPressed: () {
-                    // Menu for Edit or Delete (Teacher only)
-                  },
+                  onPressed: () => _showTeacherMenu(context),
                 ),
               ]
             : null,
@@ -120,10 +140,10 @@ class _TeacherAssignmentDetailPageState extends State<TeacherAssignmentDetailPag
 
   Widget _buildMainCard() {
     // Get assignment data
-    final title = widget.assignmentData['title'] ?? 'Untitled Assignment';
-    final instructions = widget.assignmentData['instructions'] ?? 'No instructions provided.';
-    final points = widget.assignmentData['points']?.toString() ?? '100';
-    final classId = widget.assignmentData['classId'] ?? '';
+    final title = _assignmentData['title'] ?? 'Untitled Assignment';
+    final instructions = _assignmentData['instructions'] ?? 'No instructions provided.';
+    final points = _assignmentData['points']?.toString() ?? '100';
+    final classId = _assignmentData['classId'] ?? '';
 
     return Container(
       padding: const EdgeInsets.all(20),
@@ -191,20 +211,20 @@ class _TeacherAssignmentDetailPageState extends State<TeacherAssignmentDetailPag
   Widget _buildInfoCard() {
     // Format due date
     String dueDateText = "No due date";
-    if (widget.assignmentData['dueDate'] != null && widget.assignmentData['dueDate'] is Timestamp) {
-      final dueDate = (widget.assignmentData['dueDate'] as Timestamp).toDate();
+    if (_assignmentData['dueDate'] != null && _assignmentData['dueDate'] is Timestamp) {
+      final dueDate = (_assignmentData['dueDate'] as Timestamp).toDate();
       dueDateText = DateFormat('EEE, MMM d, y').format(dueDate);
     }
 
     // Format created date
     String createdDateText = "Unknown";
-    if (widget.assignmentData['createdAt'] != null && widget.assignmentData['createdAt'] is Timestamp) {
-      final createdDate = (widget.assignmentData['createdAt'] as Timestamp).toDate();
+    if (_assignmentData['createdAt'] != null && _assignmentData['createdAt'] is Timestamp) {
+      final createdDate = (_assignmentData['createdAt'] as Timestamp).toDate();
       createdDateText = DateFormat('MMM d, y').format(createdDate);
     }
 
     // Get classId from assignment
-    final classId = widget.assignmentData['classId'] ?? '';
+    final classId = _assignmentData['classId'] ?? '';
 
     return Container(
       padding: const EdgeInsets.all(20),
@@ -276,7 +296,7 @@ class _TeacherAssignmentDetailPageState extends State<TeacherAssignmentDetailPag
 
   Widget _buildAttachmentsCard() {
     // Get file attachments
-    final fileAttachments = widget.assignmentData['fileAttachments'] as List<dynamic>? ?? [];
+    final fileAttachments = _assignmentData['fileAttachments'] as List<dynamic>? ?? [];
     final fileCount = fileAttachments.length;
 
     return Container(
@@ -450,35 +470,8 @@ class _TeacherAssignmentDetailPageState extends State<TeacherAssignmentDetailPag
     return Builder(
       builder: (context) => InkWell(
         onTap: () async {
-          if (_isTeacher) {
-            // Teacher: Show file info
-            showDialog(
-              context: context,
-              builder: (context) => AlertDialog(
-                title: const Text('File Information'),
-                content: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text('Name: $fileName'),
-                    const SizedBox(height: 8),
-                    Text('Size: ${_formatFileSize(fileSize)}'),
-                    const SizedBox(height: 8),
-                    Text('Format: Base64 (Firestore)'),
-                  ],
-                ),
-                actions: [
-                  TextButton(
-                    onPressed: () => Navigator.pop(context),
-                    child: const Text('Close'),
-                  ),
-                ],
-              ),
-            );
-          } else {
-            // Student: Download file
-            await _downloadFileFromBase64(fileName, base64Data);
-          }
+          // Both teacher and student can download files
+          await _downloadFileFromBase64(fileName, base64Data);
         },
         child: Container(
           padding: const EdgeInsets.all(12),
@@ -517,7 +510,7 @@ class _TeacherAssignmentDetailPageState extends State<TeacherAssignmentDetailPag
                 ),
               ),
               Icon(
-                _isTeacher ? Icons.info_outline : Icons.download,
+                Icons.download,
                 color: Colors.grey.shade600,
               ),
             ],
@@ -623,6 +616,123 @@ class _TeacherAssignmentDetailPageState extends State<TeacherAssignmentDetailPag
     );
   }
 
+  // Show teacher menu (Delete only)
+  void _showTeacherMenu(BuildContext context) {
+    final parentContext = context;
+    showModalBottomSheet(
+      context: context,
+      builder: (sheetContext) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            ListTile(
+              leading: const Icon(Icons.delete, color: Colors.red),
+              title: const Text('Delete Assignment'),
+              onTap: () {
+                Navigator.pop(sheetContext);
+                _deleteAssignment(parentContext);
+              },
+            ),
+            ListTile(
+              leading: const Icon(Icons.cancel),
+              title: const Text('Cancel'),
+              onTap: () => Navigator.pop(sheetContext),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  // Delete assignment
+  Future<void> _deleteAssignment(BuildContext context) async {
+    // Show confirmation dialog
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Delete Assignment'),
+        content: const Text('Are you sure you want to delete this assignment? This action cannot be undone.'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('Cancel'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(context, true),
+            style: TextButton.styleFrom(foregroundColor: Colors.red),
+            child: const Text('Delete'),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmed == true) {
+      try {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('Deleting assignment...'),
+              duration: Duration(seconds: 2),
+            ),
+          );
+        }
+
+        // Show loading
+        showDialog(
+          context: context,
+          barrierDismissible: false,
+          builder: (context) => const Center(child: CircularProgressIndicator()),
+        );
+
+        // Delete related submissions in batches
+        final submissionsRef = FirebaseFirestore.instance
+            .collection('assignment_submissions')
+            .where('assignmentId', isEqualTo: widget.assignmentId)
+            .limit(500);
+
+        while (true) {
+          final submissionsSnap = await submissionsRef.get();
+          if (submissionsSnap.docs.isEmpty) break;
+
+          final batch = FirebaseFirestore.instance.batch();
+          for (final doc in submissionsSnap.docs) {
+            batch.delete(doc.reference);
+          }
+          await batch.commit();
+
+          if (submissionsSnap.docs.length < 500) break;
+        }
+
+        // Delete assignment document
+        await FirebaseFirestore.instance
+            .collection('assignments')
+            .doc(widget.assignmentId)
+            .delete();
+
+        if (mounted) {
+          Navigator.of(context, rootNavigator: true).pop(); // Close loading
+          Navigator.pop(context); // Go back to previous page
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('Assignment deleted successfully'),
+              backgroundColor: Colors.green,
+            ),
+          );
+        }
+      } catch (e) {
+        if (mounted) {
+          Navigator.of(context, rootNavigator: true).pop(); // Close loading
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text('Error deleting assignment: $e'),
+              backgroundColor: Colors.red,
+            ),
+          );
+        }
+      }
+    }
+  }
+
   Widget _buildBottomActions(BuildContext context) {
     // Different actions for teachers vs students / 教师和学生不同的操作
     if (_isTeacher) {
@@ -635,9 +745,15 @@ class _TeacherAssignmentDetailPageState extends State<TeacherAssignmentDetailPag
             Expanded(
               child: OutlinedButton.icon(
                 onPressed: () {
-                  // TODO: Navigate to submissions page / 待实现：导航到提交页面
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(content: Text("Submissions view coming soon")),
+                  Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                      builder: (_) => AssignmentSubmissionsPage(
+                        assignmentId: widget.assignmentId,
+                        classId: _assignmentData['classId'] ?? '',
+                        assignmentTitle: _assignmentData['title'] ?? 'Assignment',
+                      ),
+                    ),
                   );
                 },
                 icon: const Icon(Icons.people),
@@ -654,10 +770,18 @@ class _TeacherAssignmentDetailPageState extends State<TeacherAssignmentDetailPag
             Expanded(
               child: ElevatedButton.icon(
                 onPressed: () {
-                  // TODO: Navigate to edit assignment page / 待实现：导航到编辑作业页面
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(content: Text("Edit functionality coming soon")),
-                  );
+                  Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                      builder: (_) => EditAssignmentPage(
+                        assignmentId: widget.assignmentId,
+                        assignmentData: _assignmentData,
+                      ),
+                    ),
+                  ).then((_) {
+                    // Refresh the page when returning from edit
+                    _refreshAssignmentData();
+                  });
                 },
                 icon: const Icon(Icons.edit),
                 label: const Text("Edit Task"),
@@ -684,10 +808,15 @@ class _TeacherAssignmentDetailPageState extends State<TeacherAssignmentDetailPag
             Expanded(
               child: ElevatedButton.icon(
                 onPressed: () {
-                  // TODO: Navigate to submit assignment page / 待实现：导航到提交作业页面
-                  // This will allow students to upload their completed homework
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(content: Text("Submit assignment functionality coming soon")),
+                  Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                      builder: (_) => SubmitAssignmentPage(
+                        assignmentId: widget.assignmentId,
+                        classId: _assignmentData['classId'] ?? '',
+                        assignmentTitle: _assignmentData['title'] ?? 'Assignment',
+                      ),
+                    ),
                   );
                 },
                 icon: const Icon(Icons.upload_file),
