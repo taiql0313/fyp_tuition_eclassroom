@@ -109,29 +109,37 @@ class _SubjectDetailPageState extends State<SubjectDetailPage> {
 
     try {
       final classId = widget.classId;
-      final batch = FirebaseFirestore.instance.batch();
-
+      print('DEBUG deleteClassroom: Starting deletion for classId=$classId');
+      
       // 1. Unenroll all students - remove classId from their classIds array
+      print('DEBUG deleteClassroom: Step 1 - Unenrolling students...');
       final studentsSnapshot = await FirebaseFirestore.instance
           .collection('users')
           .where('classIds', arrayContains: classId)
           .get();
 
-      for (var studentDoc in studentsSnapshot.docs) {
-        batch.update(studentDoc.reference, {
-          'classIds': FieldValue.arrayRemove([classId]),
-        });
+      print('DEBUG deleteClassroom: Found ${studentsSnapshot.docs.length} students to unenroll');
+      
+      if (studentsSnapshot.docs.isNotEmpty) {
+        final batch = FirebaseFirestore.instance.batch();
+        for (var studentDoc in studentsSnapshot.docs) {
+          batch.update(studentDoc.reference, {
+            'classIds': FieldValue.arrayRemove([classId]),
+          });
+        }
+        await batch.commit();
+        print('DEBUG deleteClassroom: Students unenrolled successfully');
       }
 
-      // Commit student unenrollment first
-      await batch.commit();
-
       // 2. Delete all assignments for this class
+      print('DEBUG deleteClassroom: Step 2 - Deleting assignments...');
       final assignmentsSnapshot = await FirebaseFirestore.instance
           .collection('assignments')
           .where('classId', isEqualTo: classId)
           .get();
 
+      print('DEBUG deleteClassroom: Found ${assignmentsSnapshot.docs.length} assignments');
+      
       for (var doc in assignmentsSnapshot.docs) {
         // Delete submissions for each assignment
         final submissionsSnapshot = await FirebaseFirestore.instance
@@ -139,48 +147,77 @@ class _SubjectDetailPageState extends State<SubjectDetailPage> {
             .where('assignmentId', isEqualTo: doc.id)
             .get();
         
+        print('DEBUG deleteClassroom: Found ${submissionsSnapshot.docs.length} submissions for assignment ${doc.id}');
+        
         for (var subDoc in submissionsSnapshot.docs) {
           await subDoc.reference.delete();
         }
         
         await doc.reference.delete();
+        print('DEBUG deleteClassroom: Deleted assignment ${doc.id}');
       }
 
       // 3. Delete all announcements for this class
+      print('DEBUG deleteClassroom: Step 3 - Deleting announcements...');
       final announcementsSnapshot = await FirebaseFirestore.instance
           .collection('announcements')
           .where('classId', isEqualTo: classId)
           .get();
 
+      print('DEBUG deleteClassroom: Found ${announcementsSnapshot.docs.length} announcements');
+      
       for (var doc in announcementsSnapshot.docs) {
         await doc.reference.delete();
       }
 
       // 4. Delete all quizzes for this class
+      print('DEBUG deleteClassroom: Step 4 - Deleting quizzes...');
       final quizzesSnapshot = await FirebaseFirestore.instance
           .collection('quizzes')
           .where('classId', isEqualTo: classId)
           .get();
 
+      print('DEBUG deleteClassroom: Found ${quizzesSnapshot.docs.length} quizzes with classId=$classId');
+      
       for (var doc in quizzesSnapshot.docs) {
+        print('DEBUG deleteClassroom: Deleting quiz ${doc.id}');
+        await doc.reference.delete();
+      }
+      
+      // Also try subjectId in case some quizzes use that field
+      final quizzesBySubjectId = await FirebaseFirestore.instance
+          .collection('quizzes')
+          .where('subjectId', isEqualTo: classId)
+          .get();
+
+      print('DEBUG deleteClassroom: Found ${quizzesBySubjectId.docs.length} quizzes with subjectId=$classId');
+      
+      for (var doc in quizzesBySubjectId.docs) {
+        print('DEBUG deleteClassroom: Deleting quiz ${doc.id}');
         await doc.reference.delete();
       }
 
       // 5. Delete timetable for this class
+      print('DEBUG deleteClassroom: Step 5 - Deleting timetables...');
       final timetableSnapshot = await FirebaseFirestore.instance
           .collection('timetables')
           .where('classId', isEqualTo: classId)
           .get();
 
+      print('DEBUG deleteClassroom: Found ${timetableSnapshot.docs.length} timetables');
+      
       for (var doc in timetableSnapshot.docs) {
         await doc.reference.delete();
       }
 
       // 6. Finally, delete the classroom document
+      print('DEBUG deleteClassroom: Step 6 - Deleting classroom document...');
       await FirebaseFirestore.instance
           .collection('classrooms')
           .doc(classId)
           .delete();
+      
+      print('DEBUG deleteClassroom: SUCCESS - Classroom deleted!');
 
       if (mounted) {
         Navigator.of(context, rootNavigator: true).pop(); // Close loading
@@ -192,13 +229,17 @@ class _SubjectDetailPageState extends State<SubjectDetailPage> {
           ),
         );
       }
-    } catch (e) {
+    } catch (e, stackTrace) {
+      print('DEBUG deleteClassroom: ERROR - $e');
+      print('DEBUG deleteClassroom: Stack trace - $stackTrace');
+      
       if (mounted) {
         Navigator.of(context, rootNavigator: true).pop(); // Close loading
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: Text('Error deleting classroom: $e'),
             backgroundColor: Colors.red,
+            duration: const Duration(seconds: 5),
           ),
         );
       }

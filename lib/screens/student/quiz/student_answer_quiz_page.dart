@@ -1,6 +1,7 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
+import 'student_quiz_result_page.dart';
 
 class StudentAnswerQuizPage extends StatefulWidget {
   final String quizId;
@@ -18,13 +19,35 @@ class StudentAnswerQuizPage extends StatefulWidget {
 
 class _StudentAnswerQuizPageState extends State<StudentAnswerQuizPage> {
   final Map<int, dynamic> _answers = {}; // questionIndex -> answer
+  final Map<int, TextEditingController> _shortAnswerControllers = {}; // controllers for short answers
   bool _isSubmitting = false;
   bool _isSubmitted = false;
+  String? _submissionId;
+  Map<String, dynamic>? _submissionData;
 
   @override
   void initState() {
     super.initState();
+    _initializeControllers();
     _checkIfAlreadySubmitted();
+  }
+  
+  void _initializeControllers() {
+    final questions = widget.quizData['questions'] as List<dynamic>? ?? [];
+    for (int i = 0; i < questions.length; i++) {
+      final question = questions[i] as Map<String, dynamic>;
+      if (question['type'] == 'ShortAnswer') {
+        _shortAnswerControllers[i] = TextEditingController();
+      }
+    }
+  }
+  
+  @override
+  void dispose() {
+    for (var controller in _shortAnswerControllers.values) {
+      controller.dispose();
+    }
+    super.dispose();
   }
 
   Future<void> _checkIfAlreadySubmitted() async {
@@ -39,19 +62,66 @@ class _StudentAnswerQuizPageState extends State<StudentAnswerQuizPage> {
           .limit(1)
           .get();
 
+      print('DEBUG _checkIfAlreadySubmitted: Found ${submission.docs.length} submissions');
+
       if (submission.docs.isNotEmpty) {
+        final doc = submission.docs.first;
+        final data = doc.data();
+        
+        print('DEBUG _checkIfAlreadySubmitted: Submission ID = ${doc.id}');
+        print('DEBUG _checkIfAlreadySubmitted: Data keys = ${data.keys.toList()}');
+        
+        // Load previous answers from graded answers list
+        final answersData = data['answers'];
+        print('DEBUG _checkIfAlreadySubmitted: answers type = ${answersData.runtimeType}');
+        
+        final Map<int, dynamic> loadedAnswers = {};
+        
+        if (answersData is List) {
+          // New format: List of graded answers
+          for (var answer in answersData) {
+            if (answer is Map<String, dynamic>) {
+              final index = answer['questionIndex'] as int?;
+              final studentAnswer = answer['studentAnswer'];
+              if (index != null) {
+                loadedAnswers[index] = studentAnswer;
+                print('DEBUG _checkIfAlreadySubmitted: Loaded answer[$index] = $studentAnswer');
+              }
+            }
+          }
+        } else if (answersData is Map) {
+          // Old format: Map of answers
+          answersData.forEach((key, value) {
+            final index = int.tryParse(key.toString());
+            if (index != null) {
+              loadedAnswers[index] = value;
+              print('DEBUG _checkIfAlreadySubmitted: Loaded answer[$index] = $value (old format)');
+            }
+          });
+        }
+        
         setState(() {
           _isSubmitted = true;
-          // Load previous answers
-          final submissionData = submission.docs.first.data();
-          final savedAnswers = submissionData['answers'] as Map<String, dynamic>? ?? {};
-          savedAnswers.forEach((key, value) {
-            _answers[int.parse(key)] = value;
+          _submissionId = doc.id;
+          _submissionData = data;
+          _answers.clear();
+          _answers.addAll(loadedAnswers);
+          
+          // Update short answer controllers with loaded answers
+          loadedAnswers.forEach((index, answer) {
+            if (_shortAnswerControllers.containsKey(index) && answer is String) {
+              _shortAnswerControllers[index]!.text = answer;
+            }
           });
         });
+        
+        print('DEBUG _checkIfAlreadySubmitted: Total loaded answers = ${_answers.length}');
+        print('DEBUG _checkIfAlreadySubmitted: _isSubmitted = $_isSubmitted');
+        print('DEBUG _checkIfAlreadySubmitted: _submissionId = $_submissionId');
       }
-    } catch (e) {
+    } catch (e, stackTrace) {
       print('Error checking submission: $e');
+      print('Stack trace: $stackTrace');
     }
   }
 
@@ -79,11 +149,55 @@ class _StudentAnswerQuizPageState extends State<StudentAnswerQuizPage> {
     setState(() => _isSubmitting = true);
 
     try {
-      // Convert answers to string keys for Firestore
-      final answersMap = <String, dynamic>{};
-      _answers.forEach((key, value) {
-        answersMap[key.toString()] = value;
-      });
+      // Auto-grade MCQ questions / 自动评分 MCQ 题目
+      final List<Map<String, dynamic>> gradedAnswers = [];
+      int totalScore = 0;
+      int maxTotalScore = 0;
+      int mcqCorrect = 0;
+      int mcqTotal = 0;
+      
+      for (int i = 0; i < questions.length; i++) {
+        final question = questions[i] as Map<String, dynamic>;
+        final questionType = question['type'] as String? ?? 'MCQ';
+        final studentAnswer = _answers[i];
+        
+        if (questionType == 'MCQ') {
+          // MCQ: Auto-grade by comparing with correct answer
+          // MCQ：对比正确答案自动评分
+          final correctAnswer = question['correctAnswer'] as int?;
+          final isCorrect = studentAnswer == correctAnswer;
+          final score = isCorrect ? 10 : 0; // 10 points per MCQ / 每题 10 分
+          
+          gradedAnswers.add({
+            'questionIndex': i,
+            'type': 'MCQ',
+            'studentAnswer': studentAnswer,
+            'correctAnswer': correctAnswer,
+            'isCorrect': isCorrect,
+            'score': score,
+            'maxScore': 10,
+          });
+          
+          totalScore += score;
+          maxTotalScore += 10;
+          mcqTotal++;
+          if (isCorrect) mcqCorrect++;
+        } else {
+          // Short Answer: Needs AI grading (will be added later)
+          // 简答题：需要 AI 评分（稍后添加）
+          gradedAnswers.add({
+            'questionIndex': i,
+            'type': 'ShortAnswer',
+            'studentAnswer': studentAnswer ?? '',
+            'sampleAnswer': question['sampleAnswer'] ?? '',
+            'score': null, // Will be graded by AI or teacher / 由 AI 或老师评分
+            'maxScore': 10,
+            'status': 'pending_grading', // pending_grading, graded
+          });
+          
+          maxTotalScore += 10;
+        }
+      }
 
       // Check if submission already exists
       final existingSubmission = await FirebaseFirestore.instance
@@ -93,35 +207,67 @@ class _StudentAnswerQuizPageState extends State<StudentAnswerQuizPage> {
           .limit(1)
           .get();
 
+      final submissionData = {
+        'quizId': widget.quizId,
+        'quizTitle': widget.quizData['title'] ?? 'Untitled Quiz',
+        'studentId': user.uid,
+        'studentName': user.displayName ?? 'Student',
+        'classId': widget.quizData['classId'],
+        'answers': gradedAnswers,
+        'totalScore': totalScore,
+        'maxTotalScore': maxTotalScore,
+        'mcqScore': mcqCorrect * 10,
+        'mcqMaxScore': mcqTotal * 10,
+        'mcqCorrect': mcqCorrect,
+        'mcqTotal': mcqTotal,
+        'status': gradedAnswers.any((a) => a['status'] == 'pending_grading') 
+            ? 'pending_grading' 
+            : 'graded',
+        'submittedAt': FieldValue.serverTimestamp(),
+      };
+
+      String newSubmissionId;
+      
       if (existingSubmission.docs.isNotEmpty) {
         // Update existing submission
+        newSubmissionId = existingSubmission.docs.first.id;
         await FirebaseFirestore.instance
             .collection('quiz_submissions')
-            .doc(existingSubmission.docs.first.id)
+            .doc(newSubmissionId)
             .update({
-          'answers': answersMap,
-          'submittedAt': FieldValue.serverTimestamp(),
+          ...submissionData,
           'updatedAt': FieldValue.serverTimestamp(),
         });
       } else {
         // Create new submission
-        await FirebaseFirestore.instance.collection('quiz_submissions').add({
-          'quizId': widget.quizId,
-          'studentId': user.uid,
-          'studentName': user.displayName ?? 'Student',
-          'classId': widget.quizData['classId'],
-          'answers': answersMap,
-          'submittedAt': FieldValue.serverTimestamp(),
+        final docRef = await FirebaseFirestore.instance.collection('quiz_submissions').add({
+          ...submissionData,
           'createdAt': FieldValue.serverTimestamp(),
         });
+        newSubmissionId = docRef.id;
       }
 
       if (mounted) {
-        setState(() => _isSubmitted = true);
+        setState(() {
+          _isSubmitted = true;
+          _submissionId = newSubmissionId;
+          _submissionData = submissionData;
+        });
+        
+        // Show score for MCQ / 显示 MCQ 分数
+        String message = "Quiz submitted successfully! 🎉";
+        if (mcqTotal > 0) {
+          message += "\nMCQ Score: $mcqCorrect/$mcqTotal correct";
+        }
+        if (gradedAnswers.any((a) => a['status'] == 'pending_grading')) {
+          message += "\nShort answers pending grading.";
+        }
+        
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text("Quiz submitted successfully! 🎉"),
+          SnackBar(
+            content: Text(message),
             backgroundColor: Colors.green,
+            duration: const Duration(seconds: 4),
           ),
         );
       }
@@ -264,6 +410,63 @@ class _StudentAnswerQuizPageState extends State<StudentAnswerQuizPage> {
                           "SUBMIT QUIZ",
                           style: TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.bold),
                         ),
+                ),
+              ),
+            
+            // View Results Button (after submission)
+            if (_isSubmitted)
+              SizedBox(
+                width: double.infinity,
+                height: 50,
+                child: ElevatedButton.icon(
+                  onPressed: () async {
+                    // If we don't have submission data, fetch it first
+                    if (_submissionId == null || _submissionData == null) {
+                      final user = FirebaseAuth.instance.currentUser;
+                      if (user == null) return;
+                      
+                      final submission = await FirebaseFirestore.instance
+                          .collection('quiz_submissions')
+                          .where('quizId', isEqualTo: widget.quizId)
+                          .where('studentId', isEqualTo: user.uid)
+                          .limit(1)
+                          .get();
+                      
+                      if (submission.docs.isNotEmpty) {
+                        _submissionId = submission.docs.first.id;
+                        _submissionData = submission.docs.first.data();
+                      } else {
+                        if (mounted) {
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            const SnackBar(content: Text('Could not load submission data')),
+                          );
+                        }
+                        return;
+                      }
+                    }
+                    
+                    if (mounted && _submissionId != null && _submissionData != null) {
+                      Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                          builder: (context) => StudentQuizResultPage(
+                            submissionId: _submissionId!,
+                            submissionData: _submissionData!,
+                            quizData: widget.quizData,
+                          ),
+                        ),
+                      );
+                    }
+                  },
+                  icon: const Icon(Icons.assessment, color: Colors.white),
+                  label: const Text(
+                    "VIEW RESULTS",
+                    style: TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.bold),
+                  ),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: Colors.green,
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                  ),
                 ),
               ),
           ],
@@ -414,17 +617,21 @@ class _StudentAnswerQuizPageState extends State<StudentAnswerQuizPage> {
   }
 
   Widget _buildShortAnswerInput(int questionIndex) {
-    final currentAnswer = _answers[questionIndex] as String? ?? '';
+    // Get or create controller
+    if (!_shortAnswerControllers.containsKey(questionIndex)) {
+      _shortAnswerControllers[questionIndex] = TextEditingController(
+        text: _answers[questionIndex] as String? ?? '',
+      );
+    }
+    
+    final controller = _shortAnswerControllers[questionIndex]!;
 
     return TextField(
       enabled: !_isSubmitted,
       maxLines: 4,
-      controller: TextEditingController(text: currentAnswer)
-        ..selection = TextSelection.collapsed(offset: currentAnswer.length),
+      controller: controller,
       onChanged: (value) {
-        setState(() {
-          _answers[questionIndex] = value;
-        });
+        _answers[questionIndex] = value;
       },
       decoration: InputDecoration(
         hintText: "Type your answer here...",

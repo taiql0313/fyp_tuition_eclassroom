@@ -82,6 +82,29 @@ service cloud.firestore {
       allow delete: if request.auth != null && isTeacher();
     }
     
+    // --- QUIZ SUBMISSIONS COLLECTION ---
+    match /quiz_submissions/{submissionId} {
+      // Students can read their own submissions, teachers can read all
+      // 学生可以读取自己的提交，老师可以读取所有
+      allow read: if request.auth != null;
+      
+      // Students can create their own quiz submissions
+      // 学生可以创建自己的 Quiz 提交
+      allow create: if request.auth != null && isStudent() && 
+        request.resource.data.studentId == request.auth.uid;
+      
+      // Students can update their own submissions (before grading), teachers can update any (for grading)
+      // 学生可以更新自己的提交（批改前），老师可以更新任何提交（用于批改）
+      allow update: if request.auth != null && (
+        (isStudent() && resource.data.studentId == request.auth.uid) ||
+        isTeacher()
+      );
+      
+      // Only teachers can delete quiz submissions
+      // 只有老师可以删除 Quiz 提交
+      allow delete: if request.auth != null && isTeacher();
+    }
+    
     // --- CLASSROOMS COLLECTION ---
     match /classrooms/{classId} {
       allow read: if request.auth != null;
