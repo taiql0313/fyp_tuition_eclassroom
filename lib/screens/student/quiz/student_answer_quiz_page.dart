@@ -2,6 +2,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'student_quiz_result_page.dart';
+import '../../../services/quiz_grading_service.dart';
 
 class StudentAnswerQuizPage extends StatefulWidget {
   final String quizId;
@@ -24,6 +25,7 @@ class _StudentAnswerQuizPageState extends State<StudentAnswerQuizPage> {
   bool _isSubmitted = false;
   String? _submissionId;
   Map<String, dynamic>? _submissionData;
+  final QuizGradingService _gradingService = QuizGradingService();
 
   @override
   void initState() {
@@ -155,7 +157,13 @@ class _StudentAnswerQuizPageState extends State<StudentAnswerQuizPage> {
       int maxTotalScore = 0;
       int mcqCorrect = 0;
       int mcqTotal = 0;
+      int shortAnswerTotal = 0;
       
+      // Get quiz context for grading / 获取测验上下文用于评分
+      final quizTitle = widget.quizData['title'] ?? 'Untitled Quiz';
+      final subject = widget.quizData['subject'] as String?;
+      
+      // First, grade all MCQ questions / 首先，评分所有 MCQ 题目
       for (int i = 0; i < questions.length; i++) {
         final question = questions[i] as Map<String, dynamic>;
         final questionType = question['type'] as String? ?? 'MCQ';
@@ -166,7 +174,7 @@ class _StudentAnswerQuizPageState extends State<StudentAnswerQuizPage> {
           // MCQ：对比正确答案自动评分
           final correctAnswer = question['correctAnswer'] as int?;
           final isCorrect = studentAnswer == correctAnswer;
-          final score = isCorrect ? 10 : 0; // 10 points per MCQ / 每题 10 分
+          final score = isCorrect ? 1 : 0; // 1 mark per MCQ / 每题 1 分
           
           gradedAnswers.add({
             'questionIndex': i,
@@ -175,27 +183,64 @@ class _StudentAnswerQuizPageState extends State<StudentAnswerQuizPage> {
             'correctAnswer': correctAnswer,
             'isCorrect': isCorrect,
             'score': score,
-            'maxScore': 10,
+            'maxScore': 1,
           });
           
           totalScore += score;
-          maxTotalScore += 10;
+          maxTotalScore += 1;
           mcqTotal++;
           if (isCorrect) mcqCorrect++;
-        } else {
-          // Short Answer: Needs AI grading (will be added later)
-          // 简答题：需要 AI 评分（稍后添加）
+        }
+      }
+      
+      // Then, grade Short Answer questions with AI (Option A - user waits) / 然后，使用 AI 评分简答题（选项 A - 用户等待）
+      final shortAnswerMaxScore = QuizGradingService.getShortAnswerMaxScore(); // 2 marks / 2 分
+      
+      for (int i = 0; i < questions.length; i++) {
+        final question = questions[i] as Map<String, dynamic>;
+        final questionType = question['type'] as String? ?? 'MCQ';
+        final studentAnswer = _answers[i];
+        
+        if (questionType == 'ShortAnswer') {
+          // Show loading message for this question / 显示此题的加载消息
+          if (mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(
+                content: Text("Grading question ${i + 1}... / 正在评分第 ${i + 1} 题..."),
+                duration: const Duration(seconds: 1),
+              ),
+            );
+          }
+          
+          // Call AI grading service / 调用 AI 评分服务
+          final gradingResult = await _gradingService.gradeShortAnswer(
+            question: question['question'] ?? '',
+            studentAnswer: studentAnswer?.toString() ?? '',
+            sampleAnswer: question['sampleAnswer'] ?? '',
+            quizTitle: quizTitle,
+            subject: subject,
+          );
+          
+          final shortAnswerScore = gradingResult['score'] as int? ?? 0;
+          final aiFeedback = gradingResult['feedback'] as String?;
+          final status = gradingResult['status'] as String? ?? 'pending_grading';
+          
           gradedAnswers.add({
             'questionIndex': i,
             'type': 'ShortAnswer',
-            'studentAnswer': studentAnswer ?? '',
+            'studentAnswer': studentAnswer?.toString() ?? '',
             'sampleAnswer': question['sampleAnswer'] ?? '',
-            'score': null, // Will be graded by AI or teacher / 由 AI 或老师评分
-            'maxScore': 10,
-            'status': 'pending_grading', // pending_grading, graded
+            'score': status == 'graded' ? shortAnswerScore : null,
+            'maxScore': shortAnswerMaxScore, // 2 marks / 2 分
+            'status': status,
+            'aiFeedback': aiFeedback, // AI feedback / AI 反馈
           });
           
-          maxTotalScore += 10;
+          if (status == 'graded') {
+            totalScore += shortAnswerScore;
+          }
+          maxTotalScore += shortAnswerMaxScore;
+          shortAnswerTotal++;
         }
       }
 
@@ -216,8 +261,8 @@ class _StudentAnswerQuizPageState extends State<StudentAnswerQuizPage> {
         'answers': gradedAnswers,
         'totalScore': totalScore,
         'maxTotalScore': maxTotalScore,
-        'mcqScore': mcqCorrect * 10,
-        'mcqMaxScore': mcqTotal * 10,
+        'mcqScore': mcqCorrect,   // 1 mark per MCQ / 每题 1 分
+        'mcqMaxScore': mcqTotal,
         'mcqCorrect': mcqCorrect,
         'mcqTotal': mcqTotal,
         'status': gradedAnswers.any((a) => a['status'] == 'pending_grading') 
@@ -254,13 +299,16 @@ class _StudentAnswerQuizPageState extends State<StudentAnswerQuizPage> {
           _submissionData = submissionData;
         });
         
-        // Show score for MCQ / 显示 MCQ 分数
+        // Show score summary / 显示分数摘要
         String message = "Quiz submitted successfully! 🎉";
         if (mcqTotal > 0) {
           message += "\nMCQ Score: $mcqCorrect/$mcqTotal correct";
         }
-        if (gradedAnswers.any((a) => a['status'] == 'pending_grading')) {
-          message += "\nShort answers pending grading.";
+        final pendingCount = gradedAnswers.where((a) => a['status'] == 'pending_grading').length;
+        if (pendingCount > 0) {
+          message += "\n$pendingCount short answer(s) pending teacher grading.";
+        } else if (shortAnswerTotal > 0) {
+          message += "\nAll questions graded! Total: $totalScore/$maxTotalScore";
         }
         
         ScaffoldMessenger.of(context).showSnackBar(
