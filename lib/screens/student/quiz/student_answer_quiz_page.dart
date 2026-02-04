@@ -202,11 +202,11 @@ class _StudentAnswerQuizPageState extends State<StudentAnswerQuizPage> {
         final studentAnswer = _answers[i];
         
         if (questionType == 'ShortAnswer') {
-          // Show loading message for this question / 显示此题的加载消息
+          // Show loading message for this question
           if (mounted) {
             ScaffoldMessenger.of(context).showSnackBar(
               SnackBar(
-                content: Text("Grading question ${i + 1}... / 正在评分第 ${i + 1} 题..."),
+                content: Text("Grading question ${i + 1}..."),
                 duration: const Duration(seconds: 1),
               ),
             );

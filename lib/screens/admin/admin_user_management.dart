@@ -424,33 +424,54 @@ class _CreateUserFormState extends State<CreateUserForm> {
 
     setState(() => _loading = true);
 
-    final authService = AuthService();
-    const defaultPassword = "password123";
+    try {
+      final authService = AuthService();
+      const defaultPassword = "password123";
 
-    final result = await authService.adminCreateUser(
-      email: _email.trim(),
-      password: defaultPassword,
-      displayName: _displayName.trim(),
-      role: _role,
-      adminPassword: _adminPassword.trim(),
-    );
-
-    setState(() => _loading = false);
-
-    if (!mounted) return;
-
-    if (result == null) {
-      Navigator.pop(context);
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('User created! Default password: password123'),
-          backgroundColor: Colors.green,
-          duration: Duration(seconds: 4),
-        ),
+      final result = await authService.adminCreateUser(
+        email: _email.trim(),
+        password: defaultPassword,
+        displayName: _displayName.trim(),
+        role: _role,
+        adminPassword: _adminPassword.trim(),
+      ).timeout(
+        const Duration(seconds: 30),
+        onTimeout: () => 'Request timed out. Please check your internet connection and try again.',
       );
-    } else {
+
+      if (!mounted) return;
+
+      setState(() => _loading = false);
+
+      if (result == null) {
+        Navigator.pop(context);
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('User created! Default password: password123'),
+            backgroundColor: Colors.green,
+            duration: Duration(seconds: 4),
+          ),
+        );
+      } else {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(result),
+            backgroundColor: Colors.red,
+            duration: const Duration(seconds: 5),
+          ),
+        );
+      }
+    } catch (e) {
+      if (!mounted) return;
+      
+      setState(() => _loading = false);
+      
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(result), backgroundColor: Colors.red),
+        SnackBar(
+          content: Text('Error creating user: ${e.toString()}'),
+          backgroundColor: Colors.red,
+          duration: const Duration(seconds: 5),
+        ),
       );
     }
   }

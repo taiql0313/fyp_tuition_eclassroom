@@ -97,26 +97,33 @@ class AuthService extends ChangeNotifier {
     double? latitude;
     double? longitude;
 
-    // ========== 1. TRY DEVICE GPS ==========
+    // ========== 1. TRY DEVICE GPS (with quick timeout to avoid blocking) ==========
     if (!kIsWeb) {
       try {
-        final serviceEnabled = await Geolocator.isLocationServiceEnabled();
+        final serviceEnabled = await Geolocator.isLocationServiceEnabled()
+            .timeout(const Duration(seconds: 1), onTimeout: () => false);
         if (serviceEnabled) {
-          var permission = await Geolocator.checkPermission();
+          var permission = await Geolocator.checkPermission()
+              .timeout(const Duration(seconds: 1), onTimeout: () => LocationPermission.denied);
           if (permission == LocationPermission.denied) {
-            permission = await Geolocator.requestPermission();
-          }
-          if (permission == LocationPermission.whileInUse ||
+            // Skip requesting permission during user creation to avoid blocking
+            // Just use IP-based location instead
+            print('[AuthService] Location permission not granted, skipping GPS');
+          } else if (permission == LocationPermission.whileInUse ||
               permission == LocationPermission.always) {
-            final position = await Geolocator.getCurrentPosition(
-              desiredAccuracy: LocationAccuracy.low,
-              timeLimit: const Duration(seconds: 5),
-            );
-            latitude = position.latitude;
-            longitude = position.longitude;
-            print('[AuthService] GPS: lat=$latitude, lon=$longitude');
-          } else {
-            print('[AuthService] Location permission denied: $permission');
+            try {
+              // Use timeLimit parameter for timeout - no need for additional timeout wrapper
+              final position = await Geolocator.getCurrentPosition(
+                desiredAccuracy: LocationAccuracy.low,
+                timeLimit: const Duration(seconds: 2),
+              );
+              latitude = position.latitude;
+              longitude = position.longitude;
+              print('[AuthService] GPS: lat=$latitude, lon=$longitude');
+            } catch (e) {
+              // This will catch TimeoutException from timeLimit or any other GPS errors
+              print('[AuthService] GPS position error: $e');
+            }
           }
         } else {
           print('[AuthService] Location service not enabled');
@@ -133,7 +140,7 @@ class AuthService extends ChangeNotifier {
             'https://api.bigdatacloud.net/data/reverse-geocode-client?latitude=$latitude&longitude=$longitude&localityLanguage=en';
         final response = await http
             .get(Uri.parse(url))
-            .timeout(const Duration(seconds: 5));
+            .timeout(const Duration(seconds: 2));
         if (response.statusCode == 200) {
           final data = json.decode(response.body) as Map<String, dynamic>;
           city = data['city']?.toString();
@@ -149,42 +156,32 @@ class AuthService extends ChangeNotifier {
       }
     }
 
-    // ========== 3. FALLBACK: IP GEOLOCATION (multiple APIs) ==========
-    // Try multiple APIs in case one is rate-limited or blocked
-    final ipApis = [
-      'https://ipapi.co/json/',
-      'https://ipinfo.io/json',
-      'https://ip-api.com/json/',
-    ];
-
-    for (final apiUrl in ipApis) {
-      if (ip != null && ip!.isNotEmpty) break; // Already got IP
+    // ========== 3. FALLBACK: IP GEOLOCATION (only try first API quickly) ==========
+    // Only try the first API with a short timeout to avoid blocking
+    if (ip == null || ip.isEmpty) {
       try {
         final response = await http
-            .get(Uri.parse(apiUrl))
-            .timeout(const Duration(seconds: 4));
+            .get(Uri.parse('https://ipapi.co/json/'))
+            .timeout(const Duration(seconds: 2));
         if (response.statusCode == 200) {
           final data = json.decode(response.body) as Map<String, dynamic>;
           
-          // Different APIs use different field names
-          ip = data['ip']?.toString() ?? data['query']?.toString();
+          ip = data['ip']?.toString();
           
           // Only use IP-based location if we don't have GPS location
-          if (city == null || city!.isEmpty) {
+          if (city == null || city.isEmpty) {
             city = data['city']?.toString();
           }
-          if (region == null || region!.isEmpty) {
-            region = data['region']?.toString() ?? data['regionName']?.toString();
+          if (region == null || region.isEmpty) {
+            region = data['region']?.toString();
           }
-          if (country == null || country!.isEmpty) {
-            country = data['country_name']?.toString() ?? 
-                     data['country']?.toString() ??
-                     data['countryName']?.toString();
+          if (country == null || country.isEmpty) {
+            country = data['country_name']?.toString();
           }
-          print('[AuthService] IP API ($apiUrl): ip=$ip, city=$city, region=$region, country=$country');
+          print('[AuthService] IP API: ip=$ip, city=$city, region=$region, country=$country');
         }
       } catch (e) {
-        print('[AuthService] IP API ($apiUrl) error: $e');
+        print('[AuthService] IP API error: $e');
       }
     }
 
@@ -412,7 +409,21 @@ class AuthService extends ChangeNotifier {
         'createdAt': FieldValue.serverTimestamp(),
       });
 
-      final clientContext = await _getClientContext();
+      // Get client context with timeout to prevent hanging
+      Map<String, String> clientContext = {};
+      try {
+        clientContext = await _getClientContext().timeout(
+          const Duration(seconds: 3),
+          onTimeout: () {
+            print('[AuthService] Client context timeout, using empty context');
+            return <String, String>{};
+          },
+        );
+      } catch (e) {
+        print('[AuthService] Error getting client context: $e');
+        clientContext = {};
+      }
+      
       await _logSystemEvent(
         type: 'Info',
         category: 'Authentication & Access',

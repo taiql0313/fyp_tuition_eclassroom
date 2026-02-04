@@ -20,7 +20,6 @@ class _CreateAttendanceCodePageState extends State<CreateAttendanceCodePage> {
   final FirebaseFirestore _db = FirebaseFirestore.instance;
   
   Map<String, bool> _isGenerating = {}; // classId -> isGenerating
-  Map<String, String?> _selectedTimeSlot = {}; // classId -> selected time slot
   
   @override
   void initState() {
@@ -51,17 +50,6 @@ class _CreateAttendanceCodePageState extends State<CreateAttendanceCodePage> {
     }
   }
   
-  // Predefined time slots
-  final List<Map<String, String>> _timeSlots = [
-    {'label': '8:00 AM - 10:00 AM', 'start': '08:00', 'end': '10:00'},
-    {'label': '10:00 AM - 12:00 PM', 'start': '10:00', 'end': '12:00'},
-    {'label': '12:00 PM - 2:00 PM', 'start': '12:00', 'end': '14:00'},
-    {'label': '2:00 PM - 4:00 PM', 'start': '14:00', 'end': '16:00'},
-    {'label': '4:00 PM - 6:00 PM', 'start': '16:00', 'end': '18:00'},
-    {'label': '6:00 PM - 8:00 PM', 'start': '18:00', 'end': '20:00'},
-    {'label': '8:00 PM - 10:00 PM', 'start': '20:00', 'end': '22:00'},
-    {'label': '10:00 PM - 12:00 AM', 'start': '22:00', 'end': '00:00'},
-  ];
 
   // Get today's day name in Malaysia time
   String _getTodayDayName() {
@@ -79,13 +67,16 @@ class _CreateAttendanceCodePageState extends State<CreateAttendanceCodePage> {
   }
 
   void _handleGenerateCode(String classId, Map<String, dynamic> classData) async {
-    // Use selected time or default to class's original time
-    final selectedTime = _selectedTimeSlot[classId] ?? classData['classTime'];
-    if (selectedTime == null) {
+    // Get the class's scheduled time - teachers cannot choose, must use class time
+    final timeStart = classData['timeStart'] as String?;
+    final timeEnd = classData['timeEnd'] as String?;
+    final classTimeDisplay = classData['classTime'] as String?;
+    
+    if (timeStart == null || timeEnd == null) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
-          content: Text("Please select a time slot for the session"),
-          backgroundColor: Colors.orange,
+          content: Text("Class time information is missing. Cannot generate attendance code."),
+          backgroundColor: Colors.red,
         ),
       );
       return;
@@ -96,37 +87,41 @@ class _CreateAttendanceCodePageState extends State<CreateAttendanceCodePage> {
     });
 
     try {
-
-      // Parse the selected time slot
-      final timeSlot = _timeSlots.firstWhere(
-        (slot) => slot['label'] == selectedTime,
-      );
-      
       // Use Malaysia time
       final now = TimezoneHelper.getMalaysiaTime();
-      final startParts = timeSlot['start']!.split(':');
-      final endParts = timeSlot['end']!.split(':');
       
-      // Create DateTime objects for today in Malaysia time with the selected times
+      // Parse the class's scheduled time (24-hour format: "10:00", "12:00")
+      final startParts = timeStart.split(':');
+      final endParts = timeEnd.split(':');
+      
+      if (startParts.length != 2 || endParts.length != 2) {
+        throw Exception('Invalid time format in class schedule');
+      }
+      
+      final startHour = int.parse(startParts[0]);
+      final startMinute = int.parse(startParts[1]);
+      final endHour = int.parse(endParts[0]);
+      final endMinute = int.parse(endParts[1]);
+      
+      // Create DateTime objects for today in Malaysia time with the class's scheduled times
       DateTime allowedStart = TimezoneHelper.createMalaysiaDateTime(
         now.year,
         now.month,
         now.day,
-        int.parse(startParts[0]),
-        int.parse(startParts[1]),
+        startHour,
+        startMinute,
       );
       
       // Handle end time - if it's 00:00, it means next day
-      int endHour = int.parse(endParts[0]);
       DateTime allowedEnd;
-      if (endHour == 0) {
+      if (endHour == 0 && endMinute == 0) {
         // Next day at midnight in Malaysia time
         allowedEnd = TimezoneHelper.createMalaysiaDateTime(
           now.year,
           now.month,
           now.day + 1,
           0,
-          int.parse(endParts[1]),
+          0,
         );
       } else {
         allowedEnd = TimezoneHelper.createMalaysiaDateTime(
@@ -134,24 +129,26 @@ class _CreateAttendanceCodePageState extends State<CreateAttendanceCodePage> {
           now.month,
           now.day,
           endHour,
-          int.parse(endParts[1]),
+          endMinute,
         );
       }
+
+      // Use the display time if available, otherwise format from timeStart/timeEnd
+      final sessionTimeDisplay = classTimeDisplay ?? 
+          '${startHour.toString().padLeft(2, '0')}:${startMinute.toString().padLeft(2, '0')} - ${endHour.toString().padLeft(2, '0')}:${endMinute.toString().padLeft(2, '0')}';
 
       final session = await _attendanceService.createSession(
         classId: classId,
         className: classData['className'] ?? 'Class',
         subject: classData['subject'] ?? 'Subject',
-        sessionTime: timeSlot['label'],
+        sessionTime: sessionTimeDisplay,
         allowedStartTime: allowedStart,
         allowedEndTime: allowedEnd,
       );
 
       if (!mounted) return;
 
-      // Clear the selected time slot after successful creation
       setState(() {
-        _selectedTimeSlot[classId] = null;
         _isGenerating[classId] = false;
       });
 
@@ -162,8 +159,9 @@ class _CreateAttendanceCodePageState extends State<CreateAttendanceCodePage> {
 
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text("Session started for ${classData['subject']}!"),
+          content: Text("Attendance code generated! Valid during class time: ${sessionTimeDisplay}"),
           backgroundColor: Colors.green,
+          duration: const Duration(seconds: 4),
         ),
       );
     } catch (e) {
@@ -539,49 +537,57 @@ class _CreateAttendanceCodePageState extends State<CreateAttendanceCodePage> {
                                       )
                                     : Column(
                                         children: [
-                                          // Time Slot Dropdown - Pre-filled with class's original time
-                                          Container(
-                                            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
-                                            decoration: BoxDecoration(
-                                              color: Colors.grey.shade100,
-                                              borderRadius: BorderRadius.circular(8),
-                                              border: Border.all(color: Colors.grey.shade300),
-                                            ),
-                                            child: DropdownButtonFormField<String>(
-                                              value: _selectedTimeSlot[classId] ?? classData['classTime'],
-                                              decoration: const InputDecoration(
-                                                labelText: "Session Time",
-                                                border: InputBorder.none,
-                                                contentPadding: EdgeInsets.symmetric(horizontal: 8),
-                                              ),
-                                              hint: const Text("Choose time slot (Required)"),
-                                              items: _timeSlots.map((slot) {
-                                                return DropdownMenuItem<String>(
-                                                  value: slot['label'],
-                                                  child: Row(
-                                                    children: [
-                                                      const Icon(Icons.access_time, size: 16, color: Colors.grey),
-                                                      const SizedBox(width: 8),
-                                                      Text(slot['label']!),
-                                                    ],
-                                                  ),
-                                                );
-                                              }).toList(),
-                                              onChanged: (value) {
-                                                setState(() {
-                                                  _selectedTimeSlot[classId] = value;
-                                                });
-                                              },
-                                            ),
-                                          ),
+                                          // Info card showing class time (read-only)
                                           if (classData['classTime'] != null) ...[
-                                            const SizedBox(height: 4),
-                                            Text(
-                                              "Default: ${classData['classTime']}",
-                                              style: TextStyle(fontSize: 11, color: Colors.grey[600], fontStyle: FontStyle.italic),
+                                            Container(
+                                              padding: const EdgeInsets.all(12),
+                                              decoration: BoxDecoration(
+                                                color: Colors.blue.shade50,
+                                                borderRadius: BorderRadius.circular(8),
+                                                border: Border.all(color: Colors.blue.shade200),
+                                              ),
+                                              child: Row(
+                                                children: [
+                                                  const Icon(Icons.info_outline, size: 18, color: Colors.blue),
+                                                  const SizedBox(width: 8),
+                                                  Expanded(
+                                                    child: Column(
+                                                      crossAxisAlignment: CrossAxisAlignment.start,
+                                                      children: [
+                                                        const Text(
+                                                          "Session Time",
+                                                          style: TextStyle(
+                                                            fontSize: 11,
+                                                            fontWeight: FontWeight.bold,
+                                                            color: Colors.blue,
+                                                          ),
+                                                        ),
+                                                        const SizedBox(height: 2),
+                                                        Text(
+                                                          classData['classTime'],
+                                                          style: const TextStyle(
+                                                            fontSize: 14,
+                                                            fontWeight: FontWeight.w600,
+                                                            color: Colors.black87,
+                                                          ),
+                                                        ),
+                                                        const SizedBox(height: 4),
+                                                        Text(
+                                                          "Code will be valid only during this time",
+                                                          style: TextStyle(
+                                                            fontSize: 10,
+                                                            color: Colors.grey[700],
+                                                            fontStyle: FontStyle.italic,
+                                                          ),
+                                                        ),
+                                                      ],
+                                                    ),
+                                                  ),
+                                                ],
+                                              ),
                                             ),
+                                            const SizedBox(height: 12),
                                           ],
-                                          const SizedBox(height: 12),
                                           SizedBox(
                                             width: double.infinity,
                                             height: 45,
@@ -592,7 +598,7 @@ class _CreateAttendanceCodePageState extends State<CreateAttendanceCodePage> {
                                                   borderRadius: BorderRadius.circular(10),
                                                 ),
                                               ),
-                                              onPressed: (isGenerating || _selectedTimeSlot[classId] == null)
+                                              onPressed: isGenerating
                                                   ? null
                                                   : () => _handleGenerateCode(classId, classData),
                                               icon: isGenerating
@@ -606,7 +612,7 @@ class _CreateAttendanceCodePageState extends State<CreateAttendanceCodePage> {
                                                     )
                                                   : const Icon(Icons.qr_code_2, size: 18),
                                               label: Text(
-                                                isGenerating ? "Creating..." : "Create Session Code",
+                                                isGenerating ? "Creating..." : "Generate Attendance Code",
                                                 style: const TextStyle(
                                                   color: Colors.white,
                                                   fontWeight: FontWeight.bold,
