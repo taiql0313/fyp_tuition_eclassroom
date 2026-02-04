@@ -1,11 +1,11 @@
 import 'dart:convert';
 import 'package:http/http.dart' as http;
+import '../config/api_config.dart';
 
 class ChatService {
-  // ⚠️ PASTE YOUR NEW GROQ KEY HERE
-  static const apiKey = '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';
-
-  static const apiUrl = 'https://api.groq.com/openai/v1/chat/completions';
+  // Now using centralized API config / 现在使用集中式 API 配置
+  static const apiKey = ApiConfig.groqApiKey;
+  static const apiUrl = ApiConfig.groqApiUrl;
 
   Future<String?> sendMessage(String userMessage) async {
     try {
@@ -16,7 +16,7 @@ class ChatService {
           "Authorization": "Bearer $apiKey",
         },
         body: jsonEncode({
-          "model": "llama-3.1-8b-instant", // This model is always free and fast
+          "model": ApiConfig.chatbotModel, // This model is always free and fast
           "messages": [
             {
               "role": "system",

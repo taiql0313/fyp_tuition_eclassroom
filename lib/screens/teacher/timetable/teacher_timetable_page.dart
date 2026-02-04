@@ -14,15 +14,17 @@ class _TeacherTimetablePageState extends State<TeacherTimetablePage> {
   String? _selectedClassId;
   List<Map<String, dynamic>> _teacherClasses = [];
   bool _isLoading = false;
+  bool _isLoadingLocks = true; // Track if locks are still loading
   
   // Week view data
   final List<String> _daysOfWeek = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
   final List<String> _timeSlots = [
-    '9:00-11:00',
+    '09:00-11:00',
     '11:00-13:00',
     '13:00-15:00',
     '15:00-17:00',
     '17:00-19:00',
+    '16:00-18:00', // Added to match existing classroom times
   ];
   
   // Selected schedule
@@ -35,8 +37,12 @@ class _TeacherTimetablePageState extends State<TeacherTimetablePage> {
   @override
   void initState() {
     super.initState();
-    _loadTeacherClasses();
-    _loadLockedTimes();
+    _initializeData();
+  }
+  
+  Future<void> _initializeData() async {
+    await _loadLockedTimes(); // Load locks first
+    await _loadTeacherClasses(); // Then load classes
   }
 
   Future<void> _loadTeacherClasses() async {
@@ -83,40 +89,78 @@ class _TeacherTimetablePageState extends State<TeacherTimetablePage> {
   }
 
   Future<void> _loadLockedTimes() async {
+    setState(() => _isLoadingLocks = true);
+    
     try {
-      // Get current month dates
-      final now = DateTime.now();
-      final firstDay = DateTime(now.year, now.month, 1);
-      final lastDay = DateTime(now.year, now.month + 1, 0);
-      
-      // Load locked times for current month
-      final lockedSnapshot = await FirebaseFirestore.instance
-          .collection('timeLocks')
-          .where('date', isGreaterThanOrEqualTo: DateFormat('yyyy-MM-dd').format(firstDay))
-          .where('date', isLessThanOrEqualTo: DateFormat('yyyy-MM-dd').format(lastDay))
+      // Load ALL classrooms to check for time conflicts
+      // Your teammate stores time in classrooms collection directly
+      final classroomsSnapshot = await FirebaseFirestore.instance
+          .collection('classrooms')
           .get();
+
+      print('DEBUG: Found ${classroomsSnapshot.docs.length} classroom documents');
 
       final lockedMap = <String, List<Map<String, dynamic>>>{};
       
-      for (var doc in lockedSnapshot.docs) {
+      for (var doc in classroomsSnapshot.docs) {
         final data = doc.data();
-        final date = data['date'] as String;
-        final timeSlot = data['timeSlot'] as String;
-        final key = '$date-$timeSlot';
+        final day = data['day'] as String?; // e.g., "Friday"
+        final timeStart = data['timeStart'] as String?; // e.g., "16:00"
+        final timeEnd = data['timeEnd'] as String?; // e.g., "18:00"
+        final classId = doc.id;
+        final className = data['className'] as String? ?? 'Unknown';
+        
+        print('DEBUG: Classroom ${doc.id} - day: $day, timeStart: $timeStart, timeEnd: $timeEnd');
+        
+        if (day == null || timeStart == null || timeEnd == null) continue;
+        
+        // Convert day name to index (0=Sun, 1=Mon, etc.)
+        final dayIndex = _getDayIndex(day);
+        if (dayIndex == -1) continue;
+        
+        // Create time slot string
+        final timeSlot = '$timeStart-$timeEnd';
+        final key = '$dayIndex-$timeSlot';
         
         if (!lockedMap.containsKey(key)) {
           lockedMap[key] = [];
         }
         
-        final lockedBy = data['lockedBy'] as List<dynamic>? ?? [];
-        lockedMap[key] = lockedBy.map((e) => e as Map<String, dynamic>).toList();
+        lockedMap[key]!.add({
+          'classId': classId,
+          'className': className,
+          'day': day,
+          'timeStart': timeStart,
+          'timeEnd': timeEnd,
+        });
+        
+        print('DEBUG: Added lock - key: $key, classId: $classId, className: $className');
       }
 
+      print('DEBUG: Total locked time slots: ${lockedMap.length}');
+      print('DEBUG: All keys: ${lockedMap.keys.toList()}');
+      
       setState(() {
         _lockedTimes = lockedMap;
+        _isLoadingLocks = false;
       });
     } catch (e) {
       print('Error loading locked times: $e');
+      setState(() => _isLoadingLocks = false);
+    }
+  }
+  
+  // Convert day name to index
+  int _getDayIndex(String dayName) {
+    switch (dayName.toLowerCase()) {
+      case 'sunday': return 0;
+      case 'monday': return 1;
+      case 'tuesday': return 2;
+      case 'wednesday': return 3;
+      case 'thursday': return 4;
+      case 'friday': return 5;
+      case 'saturday': return 6;
+      default: return -1;
     }
   }
 
@@ -154,40 +198,120 @@ class _TeacherTimetablePageState extends State<TeacherTimetablePage> {
     }
   }
 
-  bool _isTimeLocked(int dayOfWeek, String timeSlot) {
-    final now = DateTime.now();
-    final currentMonth = now.month;
-    final currentYear = now.year;
-    
-    // Check all dates in current month for this day of week
-    for (int day = 1; day <= 31; day++) {
-      try {
-        final date = DateTime(currentYear, currentMonth, day);
-        if (date.month != currentMonth) break; // Out of month
+  // Real-time conflict check against Firestore (not local cache)
+  Future<bool> _checkRealTimeConflict(int dayOfWeek, String timeSlot) async {
+    try {
+      // Convert day index to day name
+      final dayName = _daysOfWeek[dayOfWeek]; // e.g., "Fri"
+      final fullDayName = _getFullDayName(dayOfWeek); // e.g., "Friday"
+      
+      final parts = timeSlot.split('-');
+      if (parts.length != 2) return false;
+      
+      final timeStart = parts[0]; // e.g., "16:00"
+      final timeEnd = parts[1];   // e.g., "18:00"
+      
+      print('DEBUG _checkRealTimeConflict: Checking day=$fullDayName, timeStart=$timeStart, timeEnd=$timeEnd');
+      print('DEBUG _checkRealTimeConflict: selectedClassId=$_selectedClassId');
+      
+      // Query ALL classrooms and filter manually (avoid compound index requirement)
+      final snapshot = await FirebaseFirestore.instance
+          .collection('classrooms')
+          .get();
+      
+      print('DEBUG _checkRealTimeConflict: Found ${snapshot.docs.length} total classrooms');
+      
+      for (var doc in snapshot.docs) {
+        final data = doc.data();
+        final docDay = data['day'] as String?;
+        final docTimeStart = data['timeStart'] as String?;
+        final docTimeEnd = data['timeEnd'] as String?;
         
-        // Check if this date matches the day of week
-        if (date.weekday == (dayOfWeek == 0 ? 7 : dayOfWeek)) {
-          final dateStr = DateFormat('yyyy-MM-dd').format(date);
-          final key = '$dateStr-$timeSlot';
-          
-          if (_lockedTimes.containsKey(key)) {
-            final locks = _lockedTimes[key]!;
-            // Check if locked by different class
-            final user = FirebaseAuth.instance.currentUser;
-            if (user != null) {
-              for (var lock in locks) {
-                if (lock['teacherId'] == user.uid && 
-                    lock['classId'] != _selectedClassId) {
-                  return true; // Locked by teacher's other class
-                }
-              }
-            }
-          }
+        print('DEBUG _checkRealTimeConflict: Checking classroom ${doc.id} - day=$docDay, timeStart=$docTimeStart, timeEnd=$docTimeEnd');
+        
+        // Check if this classroom matches the selected time slot
+        if (docDay == fullDayName && 
+            docTimeStart == timeStart && 
+            docTimeEnd == timeEnd &&
+            doc.id != _selectedClassId) {
+          print('DEBUG _checkRealTimeConflict: CONFLICT FOUND with classroom ${doc.id}');
+          return true; // Conflict found
         }
-      } catch (e) {
-        // Invalid date, skip
-        continue;
       }
+      
+      return false;
+    } catch (e) {
+      print('Error in real-time conflict check: $e');
+      return false;
+    }
+  }
+  
+  // Get full day name from index
+  String _getFullDayName(int dayIndex) {
+    switch (dayIndex) {
+      case 0: return 'Sunday';
+      case 1: return 'Monday';
+      case 2: return 'Tuesday';
+      case 3: return 'Wednesday';
+      case 4: return 'Thursday';
+      case 5: return 'Friday';
+      case 6: return 'Saturday';
+      default: return '';
+    }
+  }
+  
+  // Format time for display (e.g., "16:00-18:00" -> "4:00 PM - 6:00 PM")
+  String _formatTimeDisplay(String startTime, String endTime) {
+    try {
+      final startParts = startTime.split(':');
+      final endParts = endTime.split(':');
+      
+      int startHour = int.parse(startParts[0]);
+      int endHour = int.parse(endParts[0]);
+      String startMin = startParts[1];
+      String endMin = endParts[1];
+      
+      String startPeriod = startHour >= 12 ? 'PM' : 'AM';
+      String endPeriod = endHour >= 12 ? 'PM' : 'AM';
+      
+      if (startHour > 12) startHour -= 12;
+      if (startHour == 0) startHour = 12;
+      if (endHour > 12) endHour -= 12;
+      if (endHour == 0) endHour = 12;
+      
+      return '$startHour:$startMin $startPeriod - $endHour:$endMin $endPeriod';
+    } catch (e) {
+      return '$startTime - $endTime';
+    }
+  }
+
+  bool _isTimeLocked(int dayOfWeek, String timeSlot) {
+    // New approach: Check against classrooms collection
+    // Key format: dayIndex-timeSlot (e.g., "5-16:00-18:00")
+    final key = '$dayOfWeek-$timeSlot';
+    
+    print('DEBUG _isTimeLocked: key=$key, selectedClassId=$_selectedClassId');
+    print('DEBUG _isTimeLocked: available keys=${_lockedTimes.keys.toList()}');
+    
+    if (_lockedTimes.containsKey(key)) {
+      final locks = _lockedTimes[key]!;
+      print('DEBUG _isTimeLocked: Found ${locks.length} locks for key: $key');
+      
+      // Check if ANY class has locked this slot (except current class)
+      for (var lock in locks) {
+        final lockClassId = lock['classId'];
+        print('DEBUG _isTimeLocked: Comparing lockClassId=$lockClassId with selectedClassId=$_selectedClassId');
+        
+        // If locked by ANY different class, it's unavailable
+        if (lockClassId != null && lockClassId != _selectedClassId) {
+          print('DEBUG _isTimeLocked: LOCKED! classId: $lockClassId (${lock['className']})');
+          return true; // Locked by another class
+        } else {
+          print('DEBUG _isTimeLocked: Same class, not locked');
+        }
+      }
+    } else {
+      print('DEBUG _isTimeLocked: Key not found in locked times');
     }
     
     return false;
@@ -208,8 +332,13 @@ class _TeacherTimetablePageState extends State<TeacherTimetablePage> {
       return;
     }
 
-    // Check if time is locked
-    if (_isTimeLocked(_selectedDayOfWeek!, _selectedTimeSlot!)) {
+    print('DEBUG _submitTimetable: Starting submit - day=$_selectedDayOfWeek, time=$_selectedTimeSlot, classId=$_selectedClassId');
+    
+    // Check if time is locked (local cache)
+    final isLocked = _isTimeLocked(_selectedDayOfWeek!, _selectedTimeSlot!);
+    print('DEBUG _submitTimetable: Local lock check result = $isLocked');
+    
+    if (isLocked) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
           content: Text('This time slot is already occupied by another class'),
@@ -223,92 +352,51 @@ class _TeacherTimetablePageState extends State<TeacherTimetablePage> {
     if (user == null) return;
 
     setState(() => _isLoading = true);
+    
+    // Real-time conflict check against Firestore
+    final hasConflict = await _checkRealTimeConflict(_selectedDayOfWeek!, _selectedTimeSlot!);
+    print('DEBUG _submitTimetable: Real-time conflict check result = $hasConflict');
+    
+    if (hasConflict) {
+      setState(() => _isLoading = false);
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('This time slot was just taken by another class. Please select a different time.'),
+            backgroundColor: Colors.red,
+          ),
+        );
+        // Refresh locked times
+        await _loadLockedTimes();
+      }
+      return;
+    }
 
     try {
-      final classData = _teacherClasses.firstWhere(
-        (c) => c['classId'] == _selectedClassId,
-      );
-
       final startTime = _selectedTimeSlot!.split('-')[0];
       final endTime = _selectedTimeSlot!.split('-')[1];
+      final dayName = _getFullDayName(_selectedDayOfWeek!);
+      
+      // Format classTime for display (e.g., "4:00 PM - 6:00 PM")
+      final classTimeDisplay = _formatTimeDisplay(startTime, endTime);
 
-      // Check if timetable already exists
-      final existingTimetable = await FirebaseFirestore.instance
-          .collection('timetables')
-          .where('classId', isEqualTo: _selectedClassId)
-          .limit(1)
-          .get();
-
-      final now = DateTime.now();
-      final currentMonth = now.month;
-      final currentYear = now.year;
-
-      if (existingTimetable.docs.isNotEmpty) {
-        // Update existing timetable - only update pendingChanges, keep baseSchedule unchanged
-        final timetableId = existingTimetable.docs.first.id;
-        final timetableRef = FirebaseFirestore.instance
-            .collection('timetables')
-            .doc(timetableId);
-
-        final existingData = existingTimetable.docs.first.data() as Map<String, dynamic>;
-        final currentStatus = existingData['status'] as String? ?? 'pending_approval';
-
-        // Only allow editing if not pending approval (unless it's for a different subject)
-        if (currentStatus == 'pending_approval') {
-          // Check if this is for the same class
-          final existingClassId = existingData['classId'] as String?;
-          if (existingClassId == _selectedClassId) {
-            setState(() => _isLoading = false);
-            if (mounted) {
-              ScaffoldMessenger.of(context).showSnackBar(
-                const SnackBar(
-                  content: Text('You already have a pending approval request for this subject. Please wait for admin approval.'),
-                  backgroundColor: Colors.orange,
-                  duration: Duration(seconds: 3),
-                ),
-              );
-            }
-            return;
-          }
-        }
-
-        // Store pending changes (don't update baseSchedule until approved)
-        await timetableRef.update({
-          'status': 'pending_approval',
-          'lastModified': FieldValue.serverTimestamp(),
-          'pendingChanges': {
-            'dayOfWeek': _selectedDayOfWeek,
-            'startTime': startTime,
-            'endTime': endTime,
-            'requestedAt': FieldValue.serverTimestamp(),
-          },
-        });
-      } else {
-        // Create new timetable
-        await FirebaseFirestore.instance.collection('timetables').add({
-          'classId': _selectedClassId,
-          'subjectName': classData['className'],
-          'teacherId': user.uid,
-          'baseSchedule': {
-            'dayOfWeek': _selectedDayOfWeek,
-            'startTime': startTime,
-            'endTime': endTime,
-          },
-          'status': 'pending_approval',
-          'cancelledDates': [],
-          'additionalSessions': [],
-          'createdAt': FieldValue.serverTimestamp(),
-          'lastModified': FieldValue.serverTimestamp(),
-        });
-      }
-
-      // Lock all dates in current month for this time slot
-      await _lockTimeSlots(_selectedDayOfWeek!, _selectedTimeSlot!, currentYear, currentMonth);
+      // Update the classroom document directly with the schedule
+      await FirebaseFirestore.instance
+          .collection('classrooms')
+          .doc(_selectedClassId)
+          .update({
+        'day': dayName,
+        'timeStart': startTime,
+        'timeEnd': endTime,
+        'classTime': classTimeDisplay,
+      });
+      
+      print('DEBUG: Updated classroom $_selectedClassId with day: $dayName, time: $startTime-$endTime');
 
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
-            content: Text('Timetable submitted. Waiting for admin approval.'),
+            content: Text('Timetable saved successfully!'),
             backgroundColor: Colors.green,
           ),
         );
@@ -419,13 +507,15 @@ class _TeacherTimetablePageState extends State<TeacherTimetablePage> {
                         child: Text(classData['className'] ?? 'Unknown'),
                       );
                     }).toList(),
-                    onChanged: (value) {
+                    onChanged: (value) async {
                       setState(() {
                         _selectedClassId = value;
                         _selectedDayOfWeek = null;
                         _selectedTimeSlot = null;
                       });
                       if (value != null) {
+                        // Refresh locked times when changing subject
+                        await _loadLockedTimes();
                         _loadExistingTimetable(value);
                       }
                     },
@@ -434,7 +524,18 @@ class _TeacherTimetablePageState extends State<TeacherTimetablePage> {
 
                 // Week View
                 Expanded(
-                  child: SingleChildScrollView(
+                  child: _isLoadingLocks 
+                    ? const Center(
+                        child: Column(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            CircularProgressIndicator(),
+                            SizedBox(height: 16),
+                            Text('Loading time slots...'),
+                          ],
+                        ),
+                      )
+                    : SingleChildScrollView(
                     padding: const EdgeInsets.all(16),
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
@@ -442,6 +543,13 @@ class _TeacherTimetablePageState extends State<TeacherTimetablePage> {
                         const Text(
                           'Select Day and Time',
                           style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+                        ),
+                        const SizedBox(height: 8),
+                        
+                        // Show locked slots count
+                        Text(
+                          'Locked slots: ${_lockedTimes.length}',
+                          style: TextStyle(fontSize: 12, color: Colors.grey.shade600),
                         ),
                         const SizedBox(height: 16),
                         

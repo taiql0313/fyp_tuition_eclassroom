@@ -204,8 +204,8 @@ class _EditAssignmentPageState extends State<EditAssignmentPage> {
 
       print("DEBUG: Total files to save: ${allFiles.length}");
 
-      // Update Firestore
-      await FirebaseFirestore.instance.collection('assignments').doc(widget.assignmentId).update({
+      // Update Firestore - IMPORTANT: Preserve classId to maintain submission links
+      final updateData = {
         'title': _titleController.text,
         'instructions': _instructionsController.text,
         'points': _pointsController.text,
@@ -213,7 +213,15 @@ class _EditAssignmentPageState extends State<EditAssignmentPage> {
         'teacherId': user.uid,
         'fileAttachments': allFiles,
         'updatedAt': FieldValue.serverTimestamp(),
-      });
+      };
+      
+      // Preserve classId if it exists (critical for submissions linking)
+      final classId = widget.assignmentData['classId'];
+      if (classId != null) {
+        updateData['classId'] = classId;
+      }
+      
+      await FirebaseFirestore.instance.collection('assignments').doc(widget.assignmentId).update(updateData);
 
       if (mounted) {
         Navigator.pop(context);
