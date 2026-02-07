@@ -27,34 +27,37 @@ class _TeacherDashboardState extends State<TeacherDashboard> {
     final user = auth.currentUser;
     final String uid = user?.uid ?? "";
 
+    final theme = Theme.of(context);
+    final appBarColor = theme.appBarTheme.backgroundColor ?? theme.colorScheme.primary;
     return Scaffold(
-      backgroundColor: const Color(0xFFFFFBF5),
       body: CustomScrollView(
         slivers: [
-          // 1. App Bar with Real User Info (Same as Student Dashboard)
           SliverAppBar(
             actions: [
               IconButton(
-                icon: const Icon(Icons.chat_bubble_outline, color: Colors.white),
+                icon: Icon(Icons.chat_bubble_outline, color: theme.appBarTheme.foregroundColor ?? Colors.white),
                 onPressed: () => Navigator.push(
                   context,
                   MaterialPageRoute(builder: (_) => const TeacherChatListPage()),
                 ),
               ),
               IconButton(
-                icon: const Icon(Icons.notifications_none, color: Colors.white),
+                icon: Icon(Icons.notifications_none, color: theme.appBarTheme.foregroundColor ?? Colors.white),
                 onPressed: () {},
               ),
               PopupMenuButton<String>(
-                icon: const Icon(Icons.more_vert, color: Colors.white),
+                icon: Icon(Icons.more_vert, color: theme.appBarTheme.foregroundColor ?? Colors.white),
                 onSelected: (value) async {
-                  if (value == 'logout') {
+                  if (value == 'settings') {
+                    Navigator.pushNamed(context, Routes.settings);
+                  } else if (value == 'logout') {
                     await auth.signOut();
                     if (context.mounted) Navigator.pushReplacementNamed(context, Routes.login);
                   }
                 },
                 itemBuilder: (context) => [
                   const PopupMenuItem(value: 'profile', child: Text('Profile')),
+                  const PopupMenuItem(value: 'settings', child: Text('Settings')),
                   const PopupMenuItem(
                     value: 'logout',
                     child: Text('Logout', style: TextStyle(color: Colors.red)),
@@ -65,11 +68,11 @@ class _TeacherDashboardState extends State<TeacherDashboard> {
             expandedHeight: 180.0,
             floating: false,
             pinned: true,
-            backgroundColor: const Color(0xFF1458A3),
+            backgroundColor: appBarColor,
             flexibleSpace: FlexibleSpaceBar(
               collapseMode: CollapseMode.pin,
               background: Container(
-                color: const Color(0xFF1458A3),
+                color: appBarColor,
                 padding: const EdgeInsets.all(20),
                 child: SafeArea(
                   child: Column(
@@ -78,15 +81,14 @@ class _TeacherDashboardState extends State<TeacherDashboard> {
                     children: [
                       Row(
                         children: [
-                          // Dynamic Avatar from Firebase User
                           Container(
                             width: 60,
                             height: 60,
-                            decoration: const BoxDecoration(color: Colors.white, shape: BoxShape.circle),
+                            decoration: BoxDecoration(color: theme.colorScheme.surface, shape: BoxShape.circle),
                             child: Center(
                               child: Text(
                                 user?.displayName?.substring(0, 1).toUpperCase() ?? "T",
-                                style: const TextStyle(fontSize: 24, fontWeight: FontWeight.bold, color: Color(0xFF1458A3)),
+                                style: TextStyle(fontSize: 24, fontWeight: FontWeight.bold, color: theme.colorScheme.primary),
                               ),
                             ),
                           ),
@@ -95,16 +97,16 @@ class _TeacherDashboardState extends State<TeacherDashboard> {
                             child: Column(
                               crossAxisAlignment: CrossAxisAlignment.start,
                               children: [
-                                Text("Welcome back,", style: TextStyle(color: Colors.white.withOpacity(0.9), fontSize: 14)),
+                                Text("Welcome back,", style: TextStyle(color: (theme.appBarTheme.foregroundColor ?? Colors.white).withOpacity(0.9), fontSize: 14)),
                                 const SizedBox(height: 4),
                                 Text(
                                   user?.displayName ?? "Teacher",
-                                  style: const TextStyle(color: Colors.white, fontSize: 22, fontWeight: FontWeight.bold),
+                                  style: TextStyle(color: theme.appBarTheme.foregroundColor ?? Colors.white, fontSize: 22, fontWeight: FontWeight.bold),
                                 ),
                                 const SizedBox(height: 4),
                                 Text(
                                   user?.email ?? "Email: Loading...",
-                                  style: TextStyle(color: Colors.white.withOpacity(0.8), fontSize: 13),
+                                  style: TextStyle(color: (theme.appBarTheme.foregroundColor ?? Colors.white).withOpacity(0.8), fontSize: 13),
                                 ),
                               ],
                             ),
@@ -321,13 +323,14 @@ class _TeacherDashboardState extends State<TeacherDashboard> {
     required String subtitle,
     required VoidCallback onViewTap,
   }) {
+    final theme = Theme.of(context);
     return Container(
       decoration: BoxDecoration(
-        color: Colors.white,
+        color: theme.cardTheme.color ?? theme.colorScheme.surface,
         borderRadius: BorderRadius.circular(16),
         boxShadow: [
           BoxShadow(
-            color: Colors.grey.withOpacity(0.1),
+            color: Colors.black.withOpacity(0.15),
             blurRadius: 10,
             offset: const Offset(0, 2),
           ),
@@ -356,15 +359,15 @@ class _TeacherDashboardState extends State<TeacherDashboard> {
                   child: Container(
                     padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
                     decoration: BoxDecoration(
-                      color: Colors.grey.shade200,
+                      color: theme.colorScheme.surfaceContainerHighest,
                       borderRadius: BorderRadius.circular(20),
                     ),
-                    child: const Text(
+                    child: Text(
                       "View",
                       style: TextStyle(
                         fontSize: 12,
                         fontWeight: FontWeight.w600,
-                        color: Colors.black87,
+                        color: theme.colorScheme.onSurface,
                       ),
                     ),
                   ),
@@ -378,7 +381,7 @@ class _TeacherDashboardState extends State<TeacherDashboard> {
               subtitle,
               style: TextStyle(
                 fontSize: 12,
-                color: Colors.grey.shade600,
+                color: theme.colorScheme.onSurfaceVariant,
                 fontWeight: FontWeight.w500,
               ),
             ),
@@ -399,7 +402,7 @@ class _TeacherDashboardState extends State<TeacherDashboard> {
           .snapshots(),
       builder: (context, classesSnapshot) {
         if (!classesSnapshot.hasData || classesSnapshot.data!.docs.isEmpty) {
-          return const Text("0 assignments", style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold, color: Colors.black87));
+          return Text("0 assignments", style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold, color: Theme.of(context).colorScheme.onSurface));
         }
 
         final classIds = classesSnapshot.data!.docs.map((doc) => doc.id).toList();
@@ -411,7 +414,7 @@ class _TeacherDashboardState extends State<TeacherDashboard> {
               .snapshots(),
           builder: (context, snapshot) {
             if (!snapshot.hasData) {
-              return const Text("0 assignments", style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold, color: Colors.black87));
+              return Text("0 assignments", style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold, color: Theme.of(context).colorScheme.onSurface));
             }
 
             final now = DateTime.now();
@@ -432,7 +435,7 @@ class _TeacherDashboardState extends State<TeacherDashboard> {
 
             return Text(
               "$pendingCount assignments",
-              style: const TextStyle(fontSize: 20, fontWeight: FontWeight.bold, color: Colors.black87),
+              style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold, color: Theme.of(context).colorScheme.onSurface),
             );
           },
         );
@@ -448,7 +451,7 @@ class _TeacherDashboardState extends State<TeacherDashboard> {
           .snapshots(),
       builder: (context, snapshot) {
         if (!snapshot.hasData || snapshot.data!.docs.isEmpty) {
-          return const Text("Today: 0%", style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold, color: Colors.black87));
+          return Text("Today: 0%", style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold, color: Theme.of(context).colorScheme.onSurface));
         }
 
         // For now, return a placeholder. You can implement actual attendance calculation
@@ -459,7 +462,7 @@ class _TeacherDashboardState extends State<TeacherDashboard> {
             final percentage = attendanceSnapshot.data ?? 0.0;
             return Text(
               "Today: ${percentage.toStringAsFixed(0)}%",
-              style: const TextStyle(fontSize: 20, fontWeight: FontWeight.bold, color: Colors.black87),
+              style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold, color: Theme.of(context).colorScheme.onSurface),
             );
           },
         );
@@ -513,7 +516,7 @@ class _TeacherDashboardState extends State<TeacherDashboard> {
       stream: _chatService.getUserChats(teacherId, 'teacher'),
       builder: (context, snapshot) {
         if (!snapshot.hasData) {
-          return const Text("0 unread", style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold, color: Colors.black87));
+          return Text("0 unread", style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold, color: Theme.of(context).colorScheme.onSurface));
         }
 
         int totalUnread = 0;
@@ -523,7 +526,7 @@ class _TeacherDashboardState extends State<TeacherDashboard> {
 
         return Text(
           "$totalUnread unread",
-          style: const TextStyle(fontSize: 20, fontWeight: FontWeight.bold, color: Colors.black87),
+          style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold, color: Theme.of(context).colorScheme.onSurface),
         );
       },
     );
@@ -537,7 +540,7 @@ class _TeacherDashboardState extends State<TeacherDashboard> {
           .snapshots(),
       builder: (context, snapshot) {
         if (!snapshot.hasData) {
-          return const Text("0 scheduled", style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold, color: Colors.black87));
+          return Text("0 scheduled", style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold, color: Theme.of(context).colorScheme.onSurface));
         }
 
         // Count all quizzes (since there's no scheduledDate field, count all as "scheduled")
@@ -545,7 +548,7 @@ class _TeacherDashboardState extends State<TeacherDashboard> {
 
         return Text(
           "$count scheduled",
-          style: const TextStyle(fontSize: 20, fontWeight: FontWeight.bold, color: Colors.black87),
+          style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold, color: Theme.of(context).colorScheme.onSurface),
         );
       },
     );
@@ -560,16 +563,16 @@ class _TeacherDashboardState extends State<TeacherDashboard> {
     String route, {
     VoidCallback? onTap,
   }) {
+    final theme = Theme.of(c);
     return Container(
       decoration: BoxDecoration(
-        color: Colors.white,
+        color: theme.cardTheme.color ?? theme.colorScheme.surface,
         borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: Colors.grey.shade200),
-        boxShadow: [BoxShadow(color: Colors.grey.withOpacity(0.05), blurRadius: 10)],
+        border: Border.all(color: theme.dividerColor),
+        boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.1), blurRadius: 10)],
       ),
       child: InkWell(
         borderRadius: BorderRadius.circular(16),
-        // 👇 USE CUSTOM onTap IF PROVIDED
         onTap: onTap ?? () => Navigator.pushNamed(c, route),
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
@@ -586,7 +589,7 @@ class _TeacherDashboardState extends State<TeacherDashboard> {
             const SizedBox(height: 12),
             Text(
               title,
-              style: const TextStyle(fontWeight: FontWeight.w600, color: Colors.black87, fontSize: 14),
+              style: TextStyle(fontWeight: FontWeight.w600, color: theme.colorScheme.onSurface, fontSize: 14),
               textAlign: TextAlign.center,
             ),
           ],
@@ -622,13 +625,14 @@ class _TeacherDashboardState extends State<TeacherDashboard> {
             activities.sort((a, b) => (b['timestamp'] as DateTime).compareTo(a['timestamp'] as DateTime));
             final recentActivities = activities.take(4).toList();
 
+            final theme = Theme.of(context);
             return Container(
               decoration: BoxDecoration(
-                color: Colors.white,
+                color: theme.cardTheme.color ?? theme.colorScheme.surface,
                 borderRadius: BorderRadius.circular(16),
                 boxShadow: [
                   BoxShadow(
-                    color: Colors.grey.withOpacity(0.1),
+                    color: Colors.black.withOpacity(0.15),
                     blurRadius: 10,
                     offset: const Offset(0, 2),
                   ),
@@ -737,6 +741,7 @@ class _TeacherDashboardState extends State<TeacherDashboard> {
   }
 
   Widget _buildActivityItem(Map<String, dynamic> activity, {bool isLast = false}) {
+    final theme = Theme.of(context);
     final timestamp = activity['timestamp'] as DateTime;
     final timeAgo = _getTimeAgo(timestamp);
 
@@ -764,10 +769,10 @@ class _TeacherDashboardState extends State<TeacherDashboard> {
               children: [
                 Text(
                   _getActivityDescription(activity),
-                  style: const TextStyle(
+                  style: TextStyle(
                     fontSize: 14,
                     fontWeight: FontWeight.w600,
-                    color: Colors.black87,
+                    color: theme.colorScheme.onSurface,
                   ),
                 ),
                 const SizedBox(height: 4),
@@ -775,7 +780,7 @@ class _TeacherDashboardState extends State<TeacherDashboard> {
                   timeAgo,
                   style: TextStyle(
                     fontSize: 12,
-                    color: Colors.grey.shade600,
+                    color: theme.colorScheme.onSurfaceVariant,
                   ),
                 ),
               ],
@@ -818,13 +823,14 @@ class _TeacherDashboardState extends State<TeacherDashboard> {
   }
 
   Widget _buildEmptyActivities() {
+    final theme = Theme.of(context);
     return Container(
       decoration: BoxDecoration(
-        color: Colors.white,
+        color: theme.cardTheme.color ?? theme.colorScheme.surface,
         borderRadius: BorderRadius.circular(16),
         boxShadow: [
           BoxShadow(
-            color: Colors.grey.withOpacity(0.1),
+            color: Colors.black.withOpacity(0.15),
             blurRadius: 10,
             offset: const Offset(0, 2),
           ),
@@ -836,7 +842,7 @@ class _TeacherDashboardState extends State<TeacherDashboard> {
           'No recent activities',
           style: TextStyle(
             fontSize: 14,
-            color: Colors.grey.shade600,
+            color: theme.colorScheme.onSurfaceVariant,
           ),
         ),
       ),

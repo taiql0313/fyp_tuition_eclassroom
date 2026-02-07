@@ -283,10 +283,9 @@ class _CreateAttendanceCodePageState extends State<CreateAttendanceCodePage> {
     }
 
     return Scaffold(
-      backgroundColor: const Color(0xFFF8F9FA),
       appBar: AppBar(
         title: const Text("Class Attendance"),
-        backgroundColor: primaryColor,
+        backgroundColor: Theme.of(context).appBarTheme.backgroundColor ?? Theme.of(context).colorScheme.primary,
         foregroundColor: Colors.white,
         elevation: 0,
       ),
@@ -796,7 +795,6 @@ class _AttendanceRecordsPageState extends State<AttendanceRecordsPage> {
     return Scaffold(
       appBar: AppBar(
         title: const Text("Attendance Records"),
-        backgroundColor: const Color(0xff1458a3),
         foregroundColor: Colors.white,
         actions: [
           IconButton(

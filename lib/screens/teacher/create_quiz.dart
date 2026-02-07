@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import '../../services/notification_service.dart';
 
 class CreateQuizPage extends StatefulWidget {
   final String? classId; // Optional classId to associate quiz with a class
@@ -91,6 +92,21 @@ class _CreateQuizPageState extends State<CreateQuizPage> {
       
       await FirebaseFirestore.instance.collection('quizzes').add(quizData);
 
+      // Notify students in the class about the new quiz
+      if (widget.classId != null && widget.classId!.isNotEmpty) {
+        try {
+          final notificationService = NotificationService();
+          await notificationService.createForStudentsInClass(
+            classId: widget.classId!,
+            type: 'quiz',
+            title: 'New Quiz',
+            message: 'A new quiz "${_quizTitleController.text}" is available.',
+          );
+        } catch (e) {
+          debugPrint('Could not create quiz notifications: $e');
+        }
+      }
+
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(content: Text("Quiz Created Successfully! 🎉")),
@@ -105,10 +121,8 @@ class _CreateQuizPageState extends State<CreateQuizPage> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: const Color(0xFFF8F9FA), // Light background
       appBar: AppBar(
-        title: const Text('Create Quiz', style: TextStyle(color: Colors.white)),
-        backgroundColor: const Color(0xFF1458A3),
+        title: const Text('Create Quiz'),
         iconTheme: const IconThemeData(color: Colors.white),
       ),
       body: SingleChildScrollView(

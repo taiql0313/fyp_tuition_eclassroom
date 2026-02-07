@@ -21,16 +21,16 @@ class AdminDashboard extends StatelessWidget {
   Widget build(BuildContext context) {
     final auth = context.read<AuthService>();
 
+    final theme = Theme.of(context);
+    final appBarColor = theme.appBarTheme.backgroundColor ?? theme.colorScheme.primary;
     return Scaffold(
-      backgroundColor: const Color(0xFFF4F6F8),
       body: Column(
         children: [
-          // --- CUSTOM HEADER ---
           Container(
             padding: const EdgeInsets.only(top: 50, left: 20, right: 20, bottom: 20),
-            decoration: const BoxDecoration(
-              color: Color(0xff1458a3),
-              borderRadius: BorderRadius.only(
+            decoration: BoxDecoration(
+              color: appBarColor,
+              borderRadius: const BorderRadius.only(
                 bottomLeft: Radius.circular(30),
                 bottomRight: Radius.circular(30),
               ),
@@ -102,13 +102,16 @@ class AdminDashboard extends StatelessWidget {
                         PopupMenuButton<String>(
                           icon: const Icon(Icons.more_vert, color: Colors.white),
                           onSelected: (value) async {
-                            if (value == 'logout') {
+                            if (value == 'settings') {
+                              Navigator.pushNamed(context, Routes.settings);
+                            } else if (value == 'logout') {
                               await auth.signOut();
                               if (context.mounted) Navigator.pushReplacementNamed(context, Routes.login);
                             }
                           },
                           itemBuilder: (context) => [
                             const PopupMenuItem(value: 'profile', child: Text('Profile')),
+                            const PopupMenuItem(value: 'settings', child: Text('Settings')),
                             const PopupMenuItem(
                               value: 'logout',
                               child: Text('Logout', style: TextStyle(color: Colors.red)),
@@ -134,7 +137,7 @@ class AdminDashboard extends StatelessWidget {
             child: ListView(
               padding: const EdgeInsets.all(20),
               children: [
-                const Text("System Overview", style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: Colors.black87)),
+                Text("System Overview", style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: theme.colorScheme.onSurface)),
                 const SizedBox(height: 15),
 
                 Row(
@@ -155,7 +158,7 @@ class AdminDashboard extends StatelessWidget {
                 ),
 
                 const SizedBox(height: 25),
-                const Text("Management", style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: Colors.black87)),
+                Text("Management", style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: theme.colorScheme.onSurface)),
                 const SizedBox(height: 15),
 
                 // Grid
@@ -258,10 +261,11 @@ class AdminDashboard extends StatelessWidget {
   }
 
   Widget _adminTile(BuildContext c, String title, IconData icon, Color color, {VoidCallback? onTap}) {
+    final theme = Theme.of(c);
     return Material(
-      color: Colors.white,
+      color: theme.cardTheme.color ?? theme.colorScheme.surface,
       elevation: 2,
-      shadowColor: Colors.grey.withOpacity(0.2),
+      shadowColor: Colors.black.withOpacity(0.2),
       borderRadius: BorderRadius.circular(16),
       child: InkWell(
         borderRadius: BorderRadius.circular(16),
@@ -275,7 +279,7 @@ class AdminDashboard extends StatelessWidget {
             Container(
               padding: const EdgeInsets.all(12),
               decoration: BoxDecoration(
-                color: color.withOpacity(0.1),
+                color: color.withOpacity(0.2),
                 shape: BoxShape.circle,
               ),
               child: Icon(icon, size: 30, color: color),
@@ -283,7 +287,7 @@ class AdminDashboard extends StatelessWidget {
             const SizedBox(height: 12),
             Text(
               title,
-              style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 14),
+              style: TextStyle(fontWeight: FontWeight.w600, fontSize: 14, color: theme.colorScheme.onSurface),
               textAlign: TextAlign.center,
             ),
           ],
@@ -300,10 +304,11 @@ class AdminDashboard extends StatelessWidget {
     int badgeCount, {
     VoidCallback? onTap,
   }) {
+    final theme = Theme.of(c);
     return Material(
-      color: Colors.white,
+      color: theme.cardTheme.color ?? theme.colorScheme.surface,
       elevation: 2,
-      shadowColor: Colors.grey.withOpacity(0.2),
+      shadowColor: Colors.black.withOpacity(0.2),
       borderRadius: BorderRadius.circular(16),
       child: InkWell(
         borderRadius: BorderRadius.circular(16),
@@ -319,7 +324,7 @@ class AdminDashboard extends StatelessWidget {
                 Container(
                   padding: const EdgeInsets.all(12),
                   decoration: BoxDecoration(
-                    color: color.withOpacity(0.1),
+                    color: color.withOpacity(0.2),
                     shape: BoxShape.circle,
                   ),
                   child: Icon(icon, size: 30, color: color),
@@ -327,7 +332,7 @@ class AdminDashboard extends StatelessWidget {
                 const SizedBox(height: 12),
                 Text(
                   title,
-                  style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 14),
+                  style: TextStyle(fontWeight: FontWeight.w600, fontSize: 14, color: theme.colorScheme.onSurface),
                   textAlign: TextAlign.center,
                 ),
               ],
@@ -368,12 +373,13 @@ class _StatCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final theme = Theme.of(context);
     return Container(
       padding: const EdgeInsets.all(15),
       decoration: BoxDecoration(
-        color: Colors.white,
+        color: theme.cardTheme.color ?? theme.colorScheme.surface,
         borderRadius: BorderRadius.circular(16),
-        boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.05), blurRadius: 10)],
+        boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.15), blurRadius: 10)],
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.center,
@@ -381,7 +387,7 @@ class _StatCard extends StatelessWidget {
           Container(
             padding: const EdgeInsets.all(10),
             decoration: BoxDecoration(
-              color: color.withOpacity(0.1),
+              color: color.withOpacity(0.2),
               borderRadius: BorderRadius.circular(8),
             ),
             child: Icon(icon, size: 28, color: color),
@@ -394,7 +400,7 @@ class _StatCard extends StatelessWidget {
           const SizedBox(height: 4),
           Text(
             label,
-            style: const TextStyle(fontSize: 12, color: Colors.grey),
+            style: TextStyle(fontSize: 12, color: theme.colorScheme.onSurfaceVariant),
             textAlign: TextAlign.center,
           ),
         ],
@@ -539,14 +545,16 @@ class _WelcomeBackCard extends StatelessWidget {
           }
         }
 
+        final theme = Theme.of(context);
+        final primary = theme.colorScheme.primary;
         return Container(
           padding: const EdgeInsets.all(20),
           decoration: BoxDecoration(
-            color: Colors.white,
+            color: theme.cardTheme.color ?? theme.colorScheme.surface,
             borderRadius: BorderRadius.circular(16),
             boxShadow: [
               BoxShadow(
-                color: Colors.black.withOpacity(0.05),
+                color: Colors.black.withOpacity(0.15),
                 blurRadius: 10,
                 offset: const Offset(0, 2),
               ),
@@ -554,22 +562,16 @@ class _WelcomeBackCard extends StatelessWidget {
           ),
           child: Row(
             children: [
-              // Left: Shield Icon
               Container(
                 width: 60,
                 height: 60,
                 decoration: BoxDecoration(
-                  color: const Color(0xff1458a3).withOpacity(0.1),
+                  color: primary.withOpacity(0.2),
                   shape: BoxShape.circle,
                 ),
-                child: const Icon(
-                  Icons.shield_outlined,
-                  color: Color(0xff1458a3),
-                  size: 32,
-                ),
+                child: Icon(Icons.shield_outlined, color: primary, size: 32),
               ),
               const SizedBox(width: 16),
-              // Middle: Welcome Text
               Expanded(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
@@ -577,15 +579,15 @@ class _WelcomeBackCard extends StatelessWidget {
                     Text(
                       "Welcome back,",
                       style: TextStyle(
-                        color: Colors.grey.shade600,
+                        color: theme.colorScheme.onSurfaceVariant,
                         fontSize: 14,
                       ),
                     ),
                     const SizedBox(height: 4),
                     Text(
                       displayName,
-                      style: const TextStyle(
-                        color: Colors.black87,
+                      style: TextStyle(
+                        color: theme.colorScheme.onSurface,
                         fontSize: 20,
                         fontWeight: FontWeight.bold,
                       ),
@@ -594,33 +596,28 @@ class _WelcomeBackCard extends StatelessWidget {
                     Text(
                       lastLoginText,
                       style: TextStyle(
-                        color: Colors.grey.shade600,
+                        color: theme.colorScheme.onSurfaceVariant,
                         fontSize: 12,
                       ),
                     ),
                   ],
                 ),
               ),
-              // Right: Admin Badge
               Container(
                 padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
                 decoration: BoxDecoration(
-                  color: const Color(0xff1458a3).withOpacity(0.1),
+                  color: primary.withOpacity(0.2),
                   borderRadius: BorderRadius.circular(20),
                 ),
                 child: Row(
                   mainAxisSize: MainAxisSize.min,
                   children: [
-                    const Icon(
-                      Icons.shield,
-                      color: Color(0xff1458a3),
-                      size: 16,
-                    ),
+                    Icon(Icons.shield, color: primary, size: 16),
                     const SizedBox(width: 6),
-                    const Text(
+                    Text(
                       "Admin",
                       style: TextStyle(
-                        color: Color(0xff1458a3),
+                        color: primary,
                         fontSize: 12,
                         fontWeight: FontWeight.w600,
                       ),

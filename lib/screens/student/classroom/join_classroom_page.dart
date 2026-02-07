@@ -159,10 +159,8 @@ class _JoinClassroomPageState extends State<JoinClassroomPage> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: const Color(0xFFF8F9FA),
       appBar: AppBar(
         title: const Text('Join Classroom', style: TextStyle(fontWeight: FontWeight.bold)),
-        backgroundColor: const Color(0xFF1458A3),
         foregroundColor: Colors.white,
       ),
       body: SingleChildScrollView(

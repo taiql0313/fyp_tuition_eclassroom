@@ -16,7 +16,6 @@ class _TimetableApprovalPageState extends State<TimetableApprovalPage> {
     return Scaffold(
       appBar: AppBar(
         title: const Text('Timetable Approval'),
-        backgroundColor: Colors.white,
         elevation: 0,
         iconTheme: const IconThemeData(color: Colors.black),
       ),

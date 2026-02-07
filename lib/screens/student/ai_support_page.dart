@@ -54,9 +54,7 @@ class _AiSupportPageState extends State<AiSupportPage> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: const Color(0xfff5f5f7),
       appBar: AppBar(
-        backgroundColor: const Color(0xfffafafa),
         elevation: 0,
         shadowColor: Colors.black12,
         surfaceTintColor: Colors.transparent,

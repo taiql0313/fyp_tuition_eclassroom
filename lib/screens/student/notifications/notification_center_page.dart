@@ -47,6 +47,8 @@ class _NotificationCenterPageState extends State<NotificationCenterPage> {
         return Icons.payments_outlined;
       case 'announcement':
         return Icons.campaign_outlined;
+      case 'quiz':
+        return Icons.quiz_outlined;
       default:
         return Icons.notifications_outlined;
     }

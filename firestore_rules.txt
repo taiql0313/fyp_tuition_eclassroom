@@ -378,10 +378,10 @@ service cloud.firestore {
       allow read: if request.auth != null &&
         (resource.data.userId == request.auth.uid || isAdmin());
 
-      // Admins can create notifications for any user
-      // Users can create their own notifications (for system messages)
+      // Admins and teachers can create notifications for any user (e.g. payment, announcement, quiz)
+      // Users can create their own notifications
       allow create: if request.auth != null &&
-        (request.resource.data.userId == request.auth.uid || isAdmin());
+        (request.resource.data.userId == request.auth.uid || isAdmin() || isTeacher());
 
       // Users can update their own notifications (mark as read)
       // Admins can update any notifications

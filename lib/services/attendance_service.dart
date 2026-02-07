@@ -671,11 +671,14 @@ class AttendanceService {
     return _db
         .collection(_documentsCol)
         .where('studentId', isEqualTo: studentId)
-        .orderBy('submittedAt', descending: true)
         .snapshots()
-        .map((snapshot) => snapshot.docs
-            .map((doc) => AbsenceDocument.fromMap(doc.id, doc.data()))
-            .toList());
+        .map((snapshot) {
+          final list = snapshot.docs
+              .map((doc) => AbsenceDocument.fromMap(doc.id, doc.data()))
+              .toList();
+          list.sort((a, b) => b.submittedAt.compareTo(a.submittedAt));
+          return list;
+        });
   }
 
   /// Get all pending absence documents (for admin)

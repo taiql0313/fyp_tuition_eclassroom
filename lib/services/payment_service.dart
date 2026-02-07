@@ -8,6 +8,7 @@ import 'package:fyp_tuition_eclassroom/services/subject_service.dart';
 import 'package:fyp_tuition_eclassroom/models/subject_model.dart';
 import 'package:intl/intl.dart';
 import 'package:http/http.dart' as http;
+import 'package:fyp_tuition_eclassroom/services/notification_service.dart';
 
 class PaymentService {
   final FirebaseFirestore _db = FirebaseFirestore.instance;
@@ -201,6 +202,16 @@ class PaymentService {
             'RM ${additionalAmount.toStringAsFixed(2)}.',
         success: true,
       );
+      try {
+        await NotificationService().createForUser(
+          userId: studentId,
+          type: 'payment',
+          title: 'New Invoice',
+          message: 'Supplementary invoice for ${DateFormat('MMM yyyy').format(month)}: RM ${additionalAmount.toStringAsFixed(2)}.',
+        );
+      } catch (e) {
+        print('Could not create invoice notification: $e');
+      }
       return Invoice.fromMap(docRef.id, supplementalInvoice.toMap());
     }
 
@@ -225,6 +236,17 @@ class PaymentService {
           '${DateFormat('MMM yyyy').format(invoice.month)}, RM ${totalAmount.toStringAsFixed(2)}.',
       success: true,
     );
+    // Notify student that a new invoice is available
+    try {
+      await NotificationService().createForUser(
+        userId: studentId,
+        type: 'payment',
+        title: 'New Invoice',
+        message: 'Invoice for ${DateFormat('MMM yyyy').format(invoice.month)}: RM ${totalAmount.toStringAsFixed(2)}. Please pay by ${DateFormat('d MMM').format(invoice.dueDate)}.',
+      );
+    } catch (e) {
+      print('Could not create invoice notification: $e');
+    }
     return Invoice.fromMap(docRef.id, invoice.toMap());
   }
 

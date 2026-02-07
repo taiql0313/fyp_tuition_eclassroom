@@ -37,10 +37,8 @@ class _AdminUserManagementState extends State<AdminUserManagement> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: const Color(0xFFF8F9FA),
       appBar: AppBar(
         elevation: 0,
-        backgroundColor: _themeColor,
         foregroundColor: Colors.white,
         title: const Text("User Management", style: TextStyle(fontWeight: FontWeight.w600)),
       ),

@@ -232,8 +232,7 @@ class _CreateAssignmentPageState extends State<CreateAssignmentPage> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: const Text("Create Assignment", style: TextStyle(color: Colors.black)),
-        backgroundColor: Colors.white,
+        title: const Text("Create Assignment"),
         elevation: 1,
         actions: [
           _isLoading

@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../../services/auth_service.dart';
 import '../../services/announcement_service.dart';
+import '../../services/notification_service.dart';
 
 class CreateAnnouncementPage extends StatefulWidget {
   final String? classId; // Optional: for class-specific announcements
@@ -15,6 +16,7 @@ class CreateAnnouncementPage extends StatefulWidget {
 class _CreateAnnouncementPageState extends State<CreateAnnouncementPage> {
   final _formKey = GlobalKey<FormState>();
   final _service = AnnouncementService();
+  final _notificationService = NotificationService();
   final _titleController = TextEditingController();
   final _contentController = TextEditingController();
 
@@ -48,6 +50,23 @@ class _CreateAnnouncementPageState extends State<CreateAnnouncementPage> {
       classId: widget.classId, // Pass classId if provided
       teacherName: teacherName,
     );
+
+    // Notify students: class-specific or all students
+    final shortContent = _content.length > 80 ? '${_content.substring(0, 80)}...' : _content;
+    if (widget.classId != null && widget.classId!.isNotEmpty) {
+      await _notificationService.createForStudentsInClass(
+        classId: widget.classId!,
+        type: 'announcement',
+        title: _title,
+        message: shortContent,
+      );
+    } else {
+      await _notificationService.createForAllStudents(
+        type: 'announcement',
+        title: _title,
+        message: shortContent,
+      );
+    }
 
     setState(() => _loading = false);
     if (!mounted) return;
@@ -109,9 +128,8 @@ class _CreateAnnouncementPageState extends State<CreateAnnouncementPage> {
     final typeColor = _getTypeColor(_type);
 
     return Scaffold(
-      backgroundColor: const Color(0xfff5f5f7),
       appBar: AppBar(
-        backgroundColor: themeColor,
+        backgroundColor: Theme.of(context).appBarTheme.backgroundColor ?? Theme.of(context).colorScheme.primary,
         elevation: 0,
         leading: IconButton(
           icon: const Icon(Icons.close, color: Colors.white),

@@ -79,7 +79,6 @@ class _PaymentManagementPageState extends State<PaymentManagementPage>
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: const Color(0xFFF5F7FA),
       appBar: _buildAppBar(),
       body: TabBarView(
         controller: _tabController,
@@ -93,14 +92,15 @@ class _PaymentManagementPageState extends State<PaymentManagementPage>
   }
 
   PreferredSizeWidget _buildAppBar() {
+    final theme = Theme.of(context);
     return AppBar(
       elevation: 0,
       title: const Text(
         "Payment Management",
         style: TextStyle(fontWeight: FontWeight.w600),
       ),
-      backgroundColor: _primaryColor,
-      foregroundColor: Colors.white,
+      backgroundColor: theme.appBarTheme.backgroundColor ?? theme.colorScheme.primary,
+      foregroundColor: theme.appBarTheme.foregroundColor ?? Colors.white,
       bottom: TabBar(
         controller: _tabController,
         indicatorColor: Colors.white,
@@ -215,6 +215,7 @@ class _PaymentManagementPageState extends State<PaymentManagementPage>
 
               if (_allInvoices.isEmpty) {
                 return _buildEmptyState(
+                  context,
                   Icons.receipt_long,
                   "No invoices found",
                 );
@@ -230,6 +231,7 @@ class _PaymentManagementPageState extends State<PaymentManagementPage>
   }
 
   Widget _buildInvoiceFilters() {
+    final theme = Theme.of(context);
     final hasFilters = _invoiceSearchQuery.isNotEmpty ||
         _invoiceStatusFilter != 'All' ||
         _invoiceMonthFilter != 0 ||
@@ -238,10 +240,10 @@ class _PaymentManagementPageState extends State<PaymentManagementPage>
     return Container(
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
-        color: Colors.white,
+        color: theme.cardTheme.color ?? theme.colorScheme.surface,
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withOpacity(0.05),
+            color: Colors.black.withOpacity(0.15),
             blurRadius: 10,
             offset: const Offset(0, 2),
           ),
@@ -255,20 +257,21 @@ class _PaymentManagementPageState extends State<PaymentManagementPage>
             final isNarrow = constraints.maxWidth < 520;
             final searchField = TextField(
               controller: _invoiceSearchController,
+              style: TextStyle(color: theme.colorScheme.onSurface),
               decoration: InputDecoration(
                 hintText: 'Search student name or email...',
-                hintStyle: TextStyle(color: Colors.grey.shade400),
-                prefixIcon: Icon(Icons.search, color: Colors.grey.shade400),
+                hintStyle: TextStyle(color: theme.colorScheme.onSurfaceVariant),
+                prefixIcon: Icon(Icons.search, color: theme.colorScheme.onSurfaceVariant),
                 suffixIcon: _invoiceSearchQuery.isNotEmpty
                     ? IconButton(
-                        icon: const Icon(Icons.clear, size: 20),
+                        icon: Icon(Icons.clear, size: 20, color: theme.colorScheme.onSurfaceVariant),
                         onPressed: () {
                           _invoiceSearchController.clear();
                         },
                       )
                     : null,
                 filled: true,
-                fillColor: Colors.grey.shade50,
+                fillColor: theme.inputDecorationTheme.fillColor ?? theme.colorScheme.surfaceContainerHighest,
                 contentPadding: const EdgeInsets.symmetric(vertical: 12),
                 border: OutlineInputBorder(
                   borderRadius: BorderRadius.circular(10),
@@ -276,11 +279,11 @@ class _PaymentManagementPageState extends State<PaymentManagementPage>
                 ),
                 enabledBorder: OutlineInputBorder(
                   borderRadius: BorderRadius.circular(10),
-                  borderSide: BorderSide(color: Colors.grey.shade200),
+                  borderSide: BorderSide(color: theme.dividerColor),
                 ),
                 focusedBorder: OutlineInputBorder(
                   borderRadius: BorderRadius.circular(10),
-                  borderSide: const BorderSide(color: _primaryColor, width: 1.5),
+                  borderSide: BorderSide(color: _primaryColor, width: 1.5),
                 ),
               ),
             );
@@ -375,11 +378,11 @@ class _PaymentManagementPageState extends State<PaymentManagementPage>
         ),
         // Invoice list
         Expanded(
-          child: invoices.isEmpty
+          child:               invoices.isEmpty
               ? Center(
                   child: Text(
                     'No invoices match filters',
-                    style: TextStyle(color: Colors.grey.shade500),
+                    style: TextStyle(color: Theme.of(context).colorScheme.onSurfaceVariant),
                   ),
                 )
               : ListView.builder(
@@ -393,12 +396,14 @@ class _PaymentManagementPageState extends State<PaymentManagementPage>
   }
 
   Widget _buildMiniStatCard(String label, dynamic value, Color color) {
+    final theme = Theme.of(context);
     return Expanded(
       child: Container(
         padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 8),
         decoration: BoxDecoration(
-          color: color.withOpacity(0.1),
+          color: color.withOpacity(0.15),
           borderRadius: BorderRadius.circular(10),
+          border: Border.all(color: theme.dividerColor.withOpacity(0.5)),
         ),
         child: Column(
           children: [
@@ -413,7 +418,7 @@ class _PaymentManagementPageState extends State<PaymentManagementPage>
             const SizedBox(height: 2),
             Text(
               label,
-              style: TextStyle(fontSize: 10, color: color.withOpacity(0.8)),
+              style: TextStyle(fontSize: 10, color: theme.colorScheme.onSurfaceVariant),
             ),
           ],
         ),
@@ -422,6 +427,7 @@ class _PaymentManagementPageState extends State<PaymentManagementPage>
   }
 
   Widget _buildInvoiceCard(Invoice invoice) {
+    final theme = Theme.of(context);
     final statusColor = invoice.status == 'paid'
         ? Colors.green
         : invoice.status == 'overdue'
@@ -434,7 +440,7 @@ class _PaymentManagementPageState extends State<PaymentManagementPage>
       elevation: 0,
       shape: RoundedRectangleBorder(
         borderRadius: BorderRadius.circular(12),
-        side: BorderSide(color: Colors.grey.shade200),
+        side: BorderSide(color: theme.dividerColor),
       ),
       child: InkWell(
         borderRadius: BorderRadius.circular(12),
@@ -794,7 +800,7 @@ class _PaymentManagementPageState extends State<PaymentManagementPage>
               }
 
               if (_allTransactions.isEmpty) {
-                return _buildEmptyState(Icons.payment, "No transactions found");
+                return _buildEmptyState(context, Icons.payment, "No transactions found");
               }
 
               final filtered = _filterTransactions(_allTransactions);
@@ -807,6 +813,7 @@ class _PaymentManagementPageState extends State<PaymentManagementPage>
   }
 
   Widget _buildTransactionFilters() {
+    final theme = Theme.of(context);
     final hasFilters = _transactionSearchQuery.isNotEmpty ||
         _transactionDateRange != null ||
         _transactionStatusFilter != 'All';
@@ -814,10 +821,10 @@ class _PaymentManagementPageState extends State<PaymentManagementPage>
     return Container(
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
-        color: Colors.white,
+        color: theme.cardTheme.color ?? theme.colorScheme.surface,
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withOpacity(0.05),
+            color: Colors.black.withOpacity(0.15),
             blurRadius: 10,
             offset: const Offset(0, 2),
           ),
@@ -830,20 +837,21 @@ class _PaymentManagementPageState extends State<PaymentManagementPage>
             final isNarrow = constraints.maxWidth < 520;
             final searchField = TextField(
               controller: _transactionSearchController,
+              style: TextStyle(color: theme.colorScheme.onSurface),
               decoration: InputDecoration(
                 hintText: 'Search student name...',
-                hintStyle: TextStyle(color: Colors.grey.shade400),
-                prefixIcon: Icon(Icons.search, color: Colors.grey.shade400),
+                hintStyle: TextStyle(color: theme.colorScheme.onSurfaceVariant),
+                prefixIcon: Icon(Icons.search, color: theme.colorScheme.onSurfaceVariant),
                 suffixIcon: _transactionSearchQuery.isNotEmpty
                     ? IconButton(
-                        icon: const Icon(Icons.clear, size: 20),
+                        icon: Icon(Icons.clear, size: 20, color: theme.colorScheme.onSurfaceVariant),
                         onPressed: () {
                           _transactionSearchController.clear();
                         },
                       )
                     : null,
                 filled: true,
-                fillColor: Colors.grey.shade50,
+                fillColor: theme.inputDecorationTheme.fillColor ?? theme.colorScheme.surfaceContainerHighest,
                 contentPadding: const EdgeInsets.symmetric(vertical: 12),
                 border: OutlineInputBorder(
                   borderRadius: BorderRadius.circular(10),
@@ -851,11 +859,11 @@ class _PaymentManagementPageState extends State<PaymentManagementPage>
                 ),
                 enabledBorder: OutlineInputBorder(
                   borderRadius: BorderRadius.circular(10),
-                  borderSide: BorderSide(color: Colors.grey.shade200),
+                  borderSide: BorderSide(color: theme.dividerColor),
                 ),
                 focusedBorder: OutlineInputBorder(
                   borderRadius: BorderRadius.circular(10),
-                  borderSide: const BorderSide(color: _primaryColor, width: 1.5),
+                  borderSide: BorderSide(color: _primaryColor, width: 1.5),
                 ),
               ),
             );
@@ -952,7 +960,7 @@ class _PaymentManagementPageState extends State<PaymentManagementPage>
               ? Center(
                   child: Text(
                     'No transactions match filters',
-                    style: TextStyle(color: Colors.grey.shade500),
+                    style: TextStyle(color: Theme.of(context).colorScheme.onSurfaceVariant),
                   ),
                 )
               : ListView.builder(
@@ -972,12 +980,13 @@ class _PaymentManagementPageState extends State<PaymentManagementPage>
             ? Colors.red
             : Colors.orange;
 
+    final theme = Theme.of(context);
     return Card(
       margin: const EdgeInsets.only(bottom: 10),
       elevation: 0,
       shape: RoundedRectangleBorder(
         borderRadius: BorderRadius.circular(12),
-        side: BorderSide(color: Colors.grey.shade200),
+        side: BorderSide(color: theme.dividerColor),
       ),
       child: Padding(
         padding: const EdgeInsets.all(14),
@@ -1138,15 +1147,16 @@ class _PaymentManagementPageState extends State<PaymentManagementPage>
   }
 
   Widget _buildStatCard(String label, String value, Color color) {
+    final theme = Theme.of(context);
     return Container(
       padding: const EdgeInsets.all(18),
       decoration: BoxDecoration(
-        color: Colors.white,
+        color: theme.cardTheme.color ?? theme.colorScheme.surface,
         borderRadius: BorderRadius.circular(14),
-        border: Border.all(color: color.withOpacity(0.2)),
+        border: Border.all(color: color.withOpacity(0.3)),
         boxShadow: [
           BoxShadow(
-            color: color.withOpacity(0.08),
+            color: Colors.black.withOpacity(0.15),
             blurRadius: 10,
             offset: const Offset(0, 4),
           ),
@@ -1162,7 +1172,7 @@ class _PaymentManagementPageState extends State<PaymentManagementPage>
           const SizedBox(height: 4),
           Text(
             label,
-            style: TextStyle(fontSize: 13, color: Colors.grey.shade600),
+            style: TextStyle(fontSize: 13, color: theme.colorScheme.onSurfaceVariant),
           ),
         ],
       ),
@@ -1172,6 +1182,7 @@ class _PaymentManagementPageState extends State<PaymentManagementPage>
   // ============ HELPER WIDGETS ============
 
   Widget _buildInvoiceMonthDropdown() {
+    final theme = Theme.of(context);
     final monthLabels = List.generate(
       12,
       (index) => DateFormat('MMM').format(DateTime(2020, index + 1, 1)),
@@ -1182,10 +1193,11 @@ class _PaymentManagementPageState extends State<PaymentManagementPage>
       decoration: InputDecoration(
         labelText: 'Month',
         filled: true,
-        fillColor: Colors.grey.shade50,
+        fillColor: theme.inputDecorationTheme.fillColor ?? theme.colorScheme.surfaceContainerHighest,
+        labelStyle: TextStyle(color: theme.colorScheme.onSurfaceVariant),
         border: OutlineInputBorder(
           borderRadius: BorderRadius.circular(10),
-          borderSide: BorderSide(color: Colors.grey.shade200),
+          borderSide: BorderSide(color: theme.dividerColor),
         ),
       ),
       items: [
@@ -1203,6 +1215,7 @@ class _PaymentManagementPageState extends State<PaymentManagementPage>
   }
 
   Widget _buildInvoiceYearDropdown() {
+    final theme = Theme.of(context);
     final years = _getInvoiceYears();
     final selectedYear = years.contains(_invoiceYearFilter) ? _invoiceYearFilter : 0;
 
@@ -1211,10 +1224,11 @@ class _PaymentManagementPageState extends State<PaymentManagementPage>
       decoration: InputDecoration(
         labelText: 'Year',
         filled: true,
-        fillColor: Colors.grey.shade50,
+        fillColor: theme.inputDecorationTheme.fillColor ?? theme.colorScheme.surfaceContainerHighest,
+        labelStyle: TextStyle(color: theme.colorScheme.onSurfaceVariant),
         border: OutlineInputBorder(
           borderRadius: BorderRadius.circular(10),
-          borderSide: BorderSide(color: Colors.grey.shade200),
+          borderSide: BorderSide(color: theme.dividerColor),
         ),
       ),
       items: [
@@ -1235,8 +1249,10 @@ class _PaymentManagementPageState extends State<PaymentManagementPage>
   }
 
   Widget _buildDateButton(DateTimeRange? range, VoidCallback onPressed) {
+    final theme = Theme.of(context);
+    final isSelected = range != null;
     return Material(
-      color: range != null ? _primaryColor : Colors.grey.shade100,
+      color: isSelected ? _primaryColor : (theme.colorScheme.surfaceContainerHighest),
       borderRadius: BorderRadius.circular(10),
       child: InkWell(
         borderRadius: BorderRadius.circular(10),
@@ -1249,13 +1265,13 @@ class _PaymentManagementPageState extends State<PaymentManagementPage>
               Icon(
                 Icons.date_range,
                 size: 18,
-                color: range != null ? Colors.white : Colors.grey.shade600,
+                color: isSelected ? Colors.white : theme.colorScheme.onSurfaceVariant,
               ),
               const SizedBox(width: 6),
               Text(
                 'Date',
                 style: TextStyle(
-                  color: range != null ? Colors.white : Colors.grey.shade600,
+                  color: isSelected ? Colors.white : theme.colorScheme.onSurfaceVariant,
                   fontWeight: FontWeight.w500,
                 ),
               ),
@@ -1292,14 +1308,15 @@ class _PaymentManagementPageState extends State<PaymentManagementPage>
     );
   }
 
-  Widget _buildEmptyState(IconData icon, String message) {
+  Widget _buildEmptyState(BuildContext context, IconData icon, String message) {
+    final theme = Theme.of(context);
     return Center(
       child: Column(
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
-          Icon(icon, size: 64, color: Colors.grey.shade300),
+          Icon(icon, size: 64, color: theme.colorScheme.onSurfaceVariant),
           const SizedBox(height: 16),
-          Text(message, style: TextStyle(color: Colors.grey.shade500, fontSize: 16)),
+          Text(message, style: TextStyle(color: theme.colorScheme.onSurfaceVariant, fontSize: 16)),
         ],
       ),
     );

@@ -268,8 +268,7 @@ class _SubmitAssignmentPageState extends State<SubmitAssignmentPage> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Submit Work', style: TextStyle(color: Colors.black)),
-        backgroundColor: Colors.white,
+        title: const Text('Submit Work'),
         elevation: 1,
         iconTheme: const IconThemeData(color: Colors.black),
         actions: [

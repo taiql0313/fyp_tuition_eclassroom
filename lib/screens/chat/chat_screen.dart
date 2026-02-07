@@ -182,11 +182,19 @@ class _ChatScreenState extends State<ChatScreen> {
   Future<void> _pickImage(ImageSource source) async {
     if (_isUploading) return;
     final picker = ImagePicker();
-    final picked = await picker.pickImage(
-      source: source,
-      imageQuality: 80,
-      maxWidth: 1600,
-    );
+    // Prefer rear camera so emulator uses laptop webcam when AVD Back camera is set to Webcam0
+    final XFile? picked = source == ImageSource.camera
+        ? await picker.pickImage(
+            source: source,
+            imageQuality: 80,
+            maxWidth: 1600,
+            preferredCameraDevice: CameraDevice.rear,
+          )
+        : await picker.pickImage(
+            source: source,
+            imageQuality: 80,
+            maxWidth: 1600,
+          );
     if (picked == null) return;
 
     final fileName = picked.name;
@@ -808,10 +816,11 @@ class _ChatScreenState extends State<ChatScreen> {
     // Use the consistent color for the entire app
     final primaryColor = const Color(0xff1458a3);
 
+    final theme = Theme.of(context);
     return Scaffold(
       appBar: AppBar(
-        backgroundColor: primaryColor,
-        foregroundColor: Colors.white,
+        backgroundColor: theme.appBarTheme.backgroundColor ?? theme.colorScheme.primary,
+        foregroundColor: theme.appBarTheme.foregroundColor ?? Colors.white,
         elevation: 1,
         leading: IconButton(
           icon: const Icon(Icons.arrow_back),
@@ -900,6 +909,7 @@ class _ChatScreenState extends State<ChatScreen> {
                 });
 
                 if (messages.isEmpty) {
+                  final emptyTheme = Theme.of(context);
                   return Center(
                     child: Column(
                       mainAxisAlignment: MainAxisAlignment.center,
@@ -907,14 +917,14 @@ class _ChatScreenState extends State<ChatScreen> {
                         Icon(
                           Icons.chat_bubble_outline,
                           size: 80,
-                          color: Colors.grey.shade300,
+                          color: emptyTheme.colorScheme.onSurfaceVariant,
                         ),
                         const SizedBox(height: 16),
                         Text(
                           'Start a conversation with ${widget.otherUserName}',
                           style: TextStyle(
                             fontSize: 16,
-                            color: Colors.grey.shade600,
+                            color: emptyTheme.colorScheme.onSurfaceVariant,
                           ),
                         ),
                         const SizedBox(height: 8),
@@ -922,7 +932,7 @@ class _ChatScreenState extends State<ChatScreen> {
                           'Send your first message below',
                           style: TextStyle(
                             fontSize: 14,
-                            color: Colors.grey.shade500,
+                            color: emptyTheme.colorScheme.onSurfaceVariant,
                           ),
                         ),
                       ],
@@ -946,21 +956,21 @@ class _ChatScreenState extends State<ChatScreen> {
           ),
           Container(
             padding: const EdgeInsets.all(8),
-            color: Colors.white,
+            color: theme.scaffoldBackgroundColor,
             child: SafeArea(
               child: Row(
                 children: [
                   Expanded(
                     child: Container(
                       decoration: BoxDecoration(
-                        color: Colors.grey.shade100,
+                        color: theme.colorScheme.surfaceContainerHighest,
                         borderRadius: BorderRadius.circular(24),
                       ),
                       child: Row(
                         children: [
                           IconButton(
                             icon: Icon(Icons.emoji_emotions_outlined,
-                                color: Colors.grey.shade600),
+                                color: theme.colorScheme.onSurfaceVariant),
                             onPressed: _toggleEmojiPicker,
                           ),
                           Expanded(
@@ -969,22 +979,23 @@ class _ChatScreenState extends State<ChatScreen> {
                               focusNode: _messageFocusNode,
                               maxLines: null,
                               textCapitalization: TextCapitalization.sentences,
-                              decoration: const InputDecoration(
+                              style: TextStyle(color: theme.colorScheme.onSurface),
+                              decoration: InputDecoration(
                                 hintText: 'Type a message...',
                                 border: InputBorder.none,
-                                hintStyle: TextStyle(color: Colors.grey),
+                                hintStyle: TextStyle(color: theme.colorScheme.onSurfaceVariant),
                               ),
                               onSubmitted: (_) => _sendMessage(),
                             ),
                           ),
                           IconButton(
                             icon: Icon(Icons.attach_file,
-                                color: Colors.grey.shade600),
+                                color: theme.colorScheme.onSurfaceVariant),
                             onPressed: _isUploading ? null : _showAttachmentSheet,
                           ),
                           IconButton(
                             icon: Icon(Icons.camera_alt,
-                                color: Colors.grey.shade600),
+                                color: theme.colorScheme.onSurfaceVariant),
                             onPressed: _isUploading ? null : () => _pickImage(ImageSource.camera),
                           ),
                         ],

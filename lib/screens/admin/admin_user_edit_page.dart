@@ -111,16 +111,13 @@ class _AdminUserEditPageState extends State<AdminUserEditPage> {
   Widget build(BuildContext context) {
     if (_user == null) {
       return Scaffold(
-        backgroundColor: const Color(0xFFF8F9FA),
-        appBar: AppBar(backgroundColor: themeColor, elevation: 0),
+        appBar: AppBar(elevation: 0),
         body: Center(child: CircularProgressIndicator(color: themeColor)),
       );
     }
 
     return Scaffold(
-      backgroundColor: const Color(0xFFF8F9FA), // Standard Dashboard BG
       appBar: AppBar(
-        backgroundColor: themeColor,
         elevation: 0,
         centerTitle: true,
         title: const Text(

@@ -67,7 +67,6 @@ class _PayPalWebViewPageState extends State<PayPalWebViewPage> {
     return Scaffold(
       appBar: AppBar(
         title: const Text('Pay with PayPal'),
-        backgroundColor: const Color(0xff1458a3),
         foregroundColor: Colors.white,
       ),
       body: Stack(

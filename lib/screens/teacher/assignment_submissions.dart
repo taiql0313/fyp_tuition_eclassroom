@@ -23,8 +23,7 @@ class AssignmentSubmissionsPage extends StatelessWidget {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Submissions', style: TextStyle(color: Colors.black)),
-        backgroundColor: Colors.white,
+        title: const Text('Submissions'),
         elevation: 1,
         iconTheme: const IconThemeData(color: Colors.black),
       ),

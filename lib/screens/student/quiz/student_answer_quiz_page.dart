@@ -338,10 +338,8 @@ class _StudentAnswerQuizPageState extends State<StudentAnswerQuizPage> {
     final quizTitle = widget.quizData['title'] ?? 'Untitled Quiz';
 
     return Scaffold(
-      backgroundColor: const Color(0xFFF8F9FA),
       appBar: AppBar(
-        title: Text(quizTitle, style: const TextStyle(color: Colors.white)),
-        backgroundColor: const Color(0xFF1458A3),
+        title: Text(quizTitle),
         iconTheme: const IconThemeData(color: Colors.white),
       ),
       body: SingleChildScrollView(

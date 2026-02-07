@@ -1,3 +1,4 @@
+import 'dart:convert';
 import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
@@ -7,6 +8,11 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:fyp_tuition_eclassroom/services/attendance_service.dart';
 import 'package:fyp_tuition_eclassroom/services/user_service.dart';
 import 'package:fyp_tuition_eclassroom/models/user_model.dart';
+import 'package:fyp_tuition_eclassroom/models/attendance_models.dart';
+import 'package:fyp_tuition_eclassroom/utils/timezone_helper.dart';
+
+// Same day names as teacher's create_attendance_code_page (classrooms collection uses these)
+const List<String> _dayNames = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
 
 class AbsenceDocumentPage extends StatefulWidget {
   const AbsenceDocumentPage({super.key});
@@ -66,6 +72,32 @@ class _AbsenceDocumentPageState extends State<AbsenceDocumentPage> {
     _dateController.dispose();
     _reasonController.dispose();
     super.dispose();
+  }
+
+  /// Check if a class has a session on any date in the range using the same logic as the
+  /// teacher's create_attendance_code_page: classrooms collection with day (e.g. "Wednesday").
+  /// Returns true if the classroom's scheduled day falls on any date in [startDate]..[endDate].
+  bool _classHasSessionInDateRange(
+    Map<String, dynamic> classData,
+    DateTime startDate,
+    DateTime endDate,
+  ) {
+    final dayStr = classData['day'] as String?;
+    if (dayStr == null || dayStr.isEmpty) return false;
+
+    final dayIndex = _dayNames.indexOf(dayStr);
+    if (dayIndex < 0) return false;
+    // Dart DateTime.weekday: Monday=1, Sunday=7
+    final weekday = dayIndex + 1;
+
+    DateTime current = DateTime(startDate.year, startDate.month, startDate.day);
+    final end = DateTime(endDate.year, endDate.month, endDate.day);
+
+    while (!current.isAfter(end)) {
+      if (current.weekday == weekday) return true;
+      current = current.add(const Duration(days: 1));
+    }
+    return false;
   }
 
   // Date Range Picker Logic
@@ -210,17 +242,17 @@ class _AbsenceDocumentPageState extends State<AbsenceDocumentPage> {
         user.uid,
       );
 
-      // Filter classes that have sessions/records in the selected date range
+      // Filter classes that have sessions in the selected date range using the same
+      // logic as teacher's attendance code page: classroom day (e.g. Wednesday) must
+      // fall on at least one date in the range.
       final applicableClasses = <MapEntry<String, Map<String, dynamic>>>[];
-      
       for (var entry in _classes.entries) {
-        final classId = entry.key;
-        final hasSessions = await _attendanceService.hasClassSessionsInDateRange(
-          classId,
+        final classData = entry.value;
+        final hasSessions = _classHasSessionInDateRange(
+          classData,
           _selectedDateRange!.start,
           _selectedDateRange!.end,
         );
-        
         if (hasSessions) {
           applicableClasses.add(entry);
         }
@@ -262,18 +294,25 @@ class _AbsenceDocumentPageState extends State<AbsenceDocumentPage> {
       }
 
       if (!mounted) return;
-      
+      // Clear form so list updates and user can submit again if needed
+      setState(() {
+        _dateController.clear();
+        _reasonController.clear();
+        _selectedDateRange = null;
+        _selectedFile = null;
+        _isFileSelected = false;
+        _fileName = "";
+      });
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text(
-            "Document submitted successfully for ${applicableClasses.length} class(es) "
-            "with sessions in the selected date range!",
+            "Document submitted successfully for ${applicableClasses.length} class(es).",
           ),
           backgroundColor: Colors.green,
           duration: const Duration(seconds: 4),
         ),
       );
-      Navigator.pop(context);
+      // Do not pop - stay on page so history section updates
     } catch (e) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
@@ -291,11 +330,11 @@ class _AbsenceDocumentPageState extends State<AbsenceDocumentPage> {
 
   @override
   Widget build(BuildContext context) {
+    final theme = Theme.of(context);
     return Scaffold(
-      backgroundColor: Colors.grey[50],
       appBar: AppBar(
         title: const Text("Submit Absence Proof"),
-        backgroundColor: const Color(0xff1458a3),
+        backgroundColor: theme.appBarTheme.backgroundColor ?? theme.colorScheme.primary,
         foregroundColor: Colors.white,
         elevation: 0,
       ),
@@ -418,7 +457,400 @@ class _AbsenceDocumentPageState extends State<AbsenceDocumentPage> {
                       ),
               ),
             ),
+
+            // --- Absence document history ---
+            const SizedBox(height: 40),
+            const Text(
+              "Absence document history",
+              style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: Colors.black87),
+            ),
+            const SizedBox(height: 16),
+            if (_auth.currentUser != null) _buildHistorySection(_auth.currentUser!.uid) else const SizedBox.shrink(),
           ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildHistorySection(String studentId) {
+    return StreamBuilder<List<AbsenceDocument>>(
+      stream: _attendanceService.streamStudentDocuments(studentId),
+      builder: (context, snapshot) {
+        if (snapshot.connectionState == ConnectionState.waiting) {
+          return const Center(
+            child: Padding(
+              padding: EdgeInsets.all(24),
+              child: CircularProgressIndicator(),
+            ),
+          );
+        }
+        if (!snapshot.hasData || snapshot.data!.isEmpty) {
+          return Container(
+            padding: const EdgeInsets.all(24),
+            decoration: BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(color: Colors.grey.shade200),
+            ),
+            child: Row(
+              children: [
+                Icon(Icons.history, size: 40, color: Colors.grey[400]),
+                const SizedBox(width: 16),
+                Expanded(
+                  child: Text(
+                    "No absence documents submitted yet.",
+                    style: TextStyle(color: Colors.grey[600], fontSize: 14),
+                  ),
+                ),
+              ],
+            ),
+          );
+        }
+        final documents = snapshot.data!;
+        return Column(
+          children: documents.map((doc) => _buildDocumentHistoryCard(doc)).toList(),
+        );
+      },
+    );
+  }
+
+  Widget _buildDocumentHistoryCard(AbsenceDocument document) {
+    final isApproved = document.status == 'approved';
+    final isRejected = document.status == 'rejected';
+    Color statusColor;
+    IconData statusIcon;
+    String statusText;
+    if (isApproved) {
+      statusColor = Colors.green;
+      statusIcon = Icons.check_circle;
+      statusText = 'Approved';
+    } else if (isRejected) {
+      statusColor = Colors.red;
+      statusIcon = Icons.cancel;
+      statusText = 'Rejected';
+    } else {
+      statusColor = Colors.orange;
+      statusIcon = Icons.pending;
+      statusText = 'Pending';
+    }
+
+    return Container(
+      margin: const EdgeInsets.only(bottom: 12),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: statusColor.withOpacity(0.3)),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.grey.withOpacity(0.1),
+            blurRadius: 4,
+            offset: const Offset(0, 2),
+          ),
+        ],
+      ),
+      child: ExpansionTile(
+        leading: Container(
+          padding: const EdgeInsets.all(8),
+          decoration: BoxDecoration(
+            color: statusColor.withOpacity(0.1),
+            borderRadius: BorderRadius.circular(8),
+          ),
+          child: Icon(statusIcon, color: statusColor, size: 24),
+        ),
+        title: Text(
+          "${DateFormat('MMM d, yyyy').format(document.startDate)} – ${DateFormat('MMM d, yyyy').format(document.endDate)}",
+          style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 15),
+        ),
+        subtitle: null,
+        trailing: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+          decoration: BoxDecoration(
+            color: statusColor.withOpacity(0.1),
+            borderRadius: BorderRadius.circular(8),
+          ),
+          child: Text(
+            statusText,
+            style: TextStyle(
+              color: statusColor,
+              fontWeight: FontWeight.bold,
+              fontSize: 11,
+            ),
+          ),
+        ),
+        children: [
+          Padding(
+            padding: const EdgeInsets.all(16),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                _buildInfoRow("Reason", document.reason),
+                const SizedBox(height: 12),
+                _buildInfoRow(
+                  "Submitted",
+                  DateFormat('MMM d, yyyy • h:mm a').format(
+                    TimezoneHelper.toMalaysiaTime(document.submittedAt),
+                  ),
+                ),
+                if (document.reviewedBy != null) ...[
+                  const SizedBox(height: 12),
+                  _buildInfoRow("Reviewed by", document.reviewedBy ?? 'N/A'),
+                  if (document.reviewedAt != null) ...[
+                    const SizedBox(height: 8),
+                    _buildInfoRow(
+                      "Reviewed at",
+                      DateFormat('MMM d, yyyy • h:mm a').format(
+                        TimezoneHelper.toMalaysiaTime(document.reviewedAt!),
+                      ),
+                    ),
+                  ],
+                ],
+                if (document.reviewNotes != null && document.reviewNotes!.isNotEmpty) ...[
+                  const SizedBox(height: 12),
+                  _buildInfoRow("Admin notes", document.reviewNotes!),
+                ],
+                const SizedBox(height: 16),
+                InkWell(
+                  onTap: () => _openFile(document.fileUrl),
+                  child: Container(
+                    padding: const EdgeInsets.all(12),
+                    decoration: BoxDecoration(
+                      color: Colors.blue.shade50,
+                      borderRadius: BorderRadius.circular(8),
+                      border: Border.all(color: Colors.blue.shade200),
+                    ),
+                    child: Row(
+                      children: [
+                        const Icon(Icons.attach_file, color: Colors.blue, size: 20),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: Text(
+                            document.fileName,
+                            style: const TextStyle(
+                              color: Colors.blue,
+                              fontWeight: FontWeight.w500,
+                            ),
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ),
+                        const Icon(Icons.open_in_new, color: Colors.blue, size: 18),
+                      ],
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildInfoRow(String label, String value) {
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        SizedBox(
+          width: 100,
+          child: Text(
+            "$label:",
+            style: TextStyle(
+              fontWeight: FontWeight.w600,
+              color: Colors.grey[700],
+              fontSize: 13,
+            ),
+          ),
+        ),
+        Expanded(
+          child: Text(
+            value,
+            style: TextStyle(color: Colors.grey[900], fontSize: 13),
+          ),
+        ),
+      ],
+    );
+  }
+
+  Future<void> _openFile(String fileRef) async {
+    try {
+      if (fileRef.startsWith('firestore:')) {
+        showDialog(
+          context: context,
+          barrierDismissible: false,
+          builder: (context) => const Center(
+            child: Card(
+              child: Padding(
+                padding: EdgeInsets.all(20),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    CircularProgressIndicator(),
+                    SizedBox(height: 16),
+                    Text("Loading file..."),
+                  ],
+                ),
+              ),
+            ),
+          ),
+        );
+        try {
+          final fileData = await _attendanceService.getFileFromFirestore(fileRef);
+          final base64Data = fileData['fileData'] as String;
+          final originalFileName = fileData['originalFileName'] as String;
+          final fileSize = fileData['fileSize'] as int;
+          if (mounted) Navigator.pop(context);
+          if (!mounted) return;
+          _showFileViewerDialog(originalFileName, base64Data, fileSize);
+        } catch (e) {
+          if (mounted) Navigator.pop(context);
+          rethrow;
+        }
+      } else {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text("Document link is not available for preview here.")),
+          );
+        }
+      }
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text("Error opening file: ${e.toString()}"),
+          duration: const Duration(seconds: 4),
+        ),
+      );
+    }
+  }
+
+  void _showFileViewerDialog(String fileName, String base64Data, int fileSize) {
+    final fileExtension = fileName.split('.').last.toLowerCase();
+    final isImage = ['jpg', 'jpeg', 'png', 'gif', 'webp'].contains(fileExtension);
+    final isPdf = fileExtension == 'pdf';
+
+    showDialog(
+      context: context,
+      builder: (context) => Dialog(
+        child: Container(
+          constraints: const BoxConstraints(maxWidth: 600, maxHeight: 800),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Container(
+                padding: const EdgeInsets.all(16),
+                decoration: const BoxDecoration(
+                  color: Color(0xff1458a3),
+                  borderRadius: BorderRadius.only(
+                    topLeft: Radius.circular(12),
+                    topRight: Radius.circular(12),
+                  ),
+                ),
+                child: Row(
+                  children: [
+                    const Icon(Icons.description, color: Colors.white),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: Text(
+                        fileName,
+                        style: const TextStyle(
+                          color: Colors.white,
+                          fontWeight: FontWeight.bold,
+                          fontSize: 16,
+                        ),
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ),
+                    IconButton(
+                      icon: const Icon(Icons.close, color: Colors.white),
+                      onPressed: () => Navigator.pop(context),
+                    ),
+                  ],
+                ),
+              ),
+              Flexible(
+                child: SingleChildScrollView(
+                  padding: const EdgeInsets.all(16),
+                  child: Column(
+                    children: [
+                      Container(
+                        padding: const EdgeInsets.all(12),
+                        decoration: BoxDecoration(
+                          color: Colors.grey[100],
+                          borderRadius: BorderRadius.circular(8),
+                        ),
+                        child: Row(
+                          children: [
+                            Icon(Icons.info_outline, color: Colors.grey[700]),
+                            const SizedBox(width: 8),
+                            Text(
+                              'File size: ${(fileSize / 1024).toStringAsFixed(2)} KB',
+                              style: TextStyle(color: Colors.grey[700]),
+                            ),
+                          ],
+                        ),
+                      ),
+                      const SizedBox(height: 16),
+                      if (isImage)
+                        Container(
+                          constraints: const BoxConstraints(maxHeight: 500),
+                          child: Image.memory(
+                            base64Decode(base64Data),
+                            fit: BoxFit.contain,
+                          ),
+                        )
+                      else if (isPdf)
+                        Container(
+                          padding: const EdgeInsets.all(40),
+                          child: Column(
+                            children: [
+                              const Icon(Icons.picture_as_pdf, size: 64, color: Colors.red),
+                              const SizedBox(height: 16),
+                              const Text(
+                                'PDF Document',
+                                style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+                              ),
+                              const SizedBox(height: 8),
+                              Text(
+                                'File size: ${(fileSize / 1024).toStringAsFixed(2)} KB',
+                                style: TextStyle(color: Colors.grey[600]),
+                              ),
+                            ],
+                          ),
+                        )
+                      else
+                        Container(
+                          padding: const EdgeInsets.all(40),
+                          child: Column(
+                            children: [
+                              const Icon(Icons.insert_drive_file, size: 64, color: Colors.grey),
+                              const SizedBox(height: 16),
+                              Text(
+                                'File size: ${(fileSize / 1024).toStringAsFixed(2)} KB',
+                                style: TextStyle(color: Colors.grey[600]),
+                              ),
+                            ],
+                          ),
+                        ),
+                    ],
+                  ),
+                ),
+              ),
+              Container(
+                padding: const EdgeInsets.all(16),
+                decoration: BoxDecoration(
+                  border: Border(top: BorderSide(color: Colors.grey[300]!)),
+                ),
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.end,
+                  children: [
+                    TextButton(
+                      onPressed: () => Navigator.pop(context),
+                      child: const Text("Close"),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
         ),
       ),
     );

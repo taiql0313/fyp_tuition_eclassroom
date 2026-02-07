@@ -471,7 +471,6 @@ class _AttendanceReportPageState extends State<AttendanceReportPage> {
     final filteredList = _filteredStudents;
 
     return Scaffold(
-      backgroundColor: const Color(0xFFF5F7FA),
       appBar: AppBar(
         title: const Text(
           "Attendance Analytics",

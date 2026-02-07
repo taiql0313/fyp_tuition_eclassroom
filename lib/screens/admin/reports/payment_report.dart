@@ -352,7 +352,6 @@ class _PaymentReportPageState extends State<PaymentReportPage> {
     final filteredList = _filteredTransactions;
 
     return Scaffold(
-      backgroundColor: const Color(0xFFF5F7FA),
       appBar: AppBar(
         title: const Text(
           "Financial Overview",

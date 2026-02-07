@@ -18,10 +18,8 @@ class PaymentHistoryPage extends StatelessWidget {
     final userId = auth.currentUser?.uid ?? '';
 
     return Scaffold(
-      backgroundColor: const Color(0xFFF8F9FA),
       appBar: AppBar(
         title: const Text("Transaction History"),
-        backgroundColor: const Color(0xff1458a3),
         foregroundColor: Colors.white,
         elevation: 0,
       ),
@@ -71,12 +69,13 @@ class PaymentHistoryPage extends StatelessWidget {
     final isCompleted = transaction.status == 'completed';
     final statusColor = isCompleted ? Colors.green : Colors.orange;
 
+    final theme = Theme.of(context);
     return Container(
       decoration: BoxDecoration(
-        color: Colors.white,
+        color: theme.cardTheme.color ?? theme.colorScheme.surface,
         borderRadius: BorderRadius.circular(12),
         boxShadow: [
-          BoxShadow(color: Colors.grey.withOpacity(0.05), blurRadius: 4, offset: const Offset(0, 2)),
+          BoxShadow(color: Colors.black.withOpacity(0.1), blurRadius: 4, offset: const Offset(0, 2)),
         ],
       ),
       child: ListTile(
@@ -84,7 +83,7 @@ class PaymentHistoryPage extends StatelessWidget {
         leading: Container(
           padding: const EdgeInsets.all(10),
           decoration: BoxDecoration(
-            color: statusColor.shade50,
+            color: statusColor.withOpacity(0.2),
             borderRadius: BorderRadius.circular(10),
           ),
           child: Icon(
@@ -95,7 +94,7 @@ class PaymentHistoryPage extends StatelessWidget {
         ),
         title: Text(
           "Invoice Payment",
-          style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
+          style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16, color: theme.colorScheme.onSurface),
         ),
         subtitle: Padding(
           padding: const EdgeInsets.only(top: 4.0),
@@ -105,7 +104,7 @@ class PaymentHistoryPage extends StatelessWidget {
               Text(
                 DateFormat('dd MMM yyyy, h:mm a')
                     .format(TimezoneHelper.toMalaysiaTime(transaction.createdAt)),
-                style: TextStyle(color: Colors.grey[600], fontSize: 13),
+                style: TextStyle(color: theme.colorScheme.onSurfaceVariant, fontSize: 13),
               ),
               const SizedBox(height: 4),
               Row(
@@ -151,7 +150,7 @@ class PaymentHistoryPage extends StatelessWidget {
         ),
         trailing: Text(
           "RM ${transaction.amount.toStringAsFixed(2)}",
-          style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16, color: Colors.black87),
+          style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16, color: theme.colorScheme.onSurface),
         ),
         onTap: () => _showTransactionDetails(context, transaction, paymentService),
       ),

@@ -95,12 +95,13 @@ class _TeacherChatListPageState extends State<TeacherChatListPage> {
                   itemCount: students.length,
                   itemBuilder: (context, index) {
                     final student = students[index];
+                    final tileTheme = Theme.of(context);
                     return Container(
                       margin: const EdgeInsets.only(bottom: 12),
                       decoration: BoxDecoration(
-                        color: Colors.grey.shade50,
+                        color: tileTheme.cardTheme.color ?? tileTheme.colorScheme.surface,
                         borderRadius: BorderRadius.circular(12),
-                        border: Border.all(color: Colors.grey.shade200),
+                        border: Border.all(color: tileTheme.dividerColor),
                       ),
                       child: ListTile(
                         leading: CircleAvatar(
@@ -115,11 +116,11 @@ class _TeacherChatListPageState extends State<TeacherChatListPage> {
                         ),
                         title: Text(
                           student['name'],
-                          style: const TextStyle(fontWeight: FontWeight.w600),
+                          style: TextStyle(fontWeight: FontWeight.w600, color: tileTheme.colorScheme.onSurface),
                         ),
                         subtitle: Text(
                           student['email'],
-                          style: TextStyle(color: Colors.grey.shade600),
+                          style: TextStyle(color: tileTheme.colorScheme.onSurfaceVariant),
                         ),
                         trailing: Container(
                           padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
@@ -218,7 +219,6 @@ class _TeacherChatListPageState extends State<TeacherChatListPage> {
     return Scaffold(
       appBar: AppBar(
         title: const Text('Messages'),
-        backgroundColor: Color(0xff1458a3),
         foregroundColor: Colors.white,
         elevation: 2,
         actions: [
@@ -235,9 +235,7 @@ class _TeacherChatListPageState extends State<TeacherChatListPage> {
             ),
         ],
       ),
-      body: Container(
-        color: Colors.grey.shade50,
-        child: StreamBuilder<List<Map<String, dynamic>>>(
+      body: StreamBuilder<List<Map<String, dynamic>>>(
           stream: _chatService.getUserChats(user.uid, 'teacher'),
           initialData: const [],
           builder: (context, snapshot) {
@@ -269,6 +267,7 @@ class _TeacherChatListPageState extends State<TeacherChatListPage> {
             final chats = snapshot.data ?? [];
 
             if (chats.isEmpty) {
+              final emptyTheme = Theme.of(context);
               return Center(
                 child: Padding(
                   padding: const EdgeInsets.all(20.0),
@@ -289,21 +288,21 @@ class _TeacherChatListPageState extends State<TeacherChatListPage> {
                         ),
                       ),
                       const SizedBox(height: 24),
-                      const Text(
+                      Text(
                         'No Conversations Yet',
                         style: TextStyle(
                           fontSize: 22,
                           fontWeight: FontWeight.bold,
-                          color: Colors.black87,
+                          color: emptyTheme.colorScheme.onSurface,
                         ),
                       ),
                       const SizedBox(height: 8),
-                      const Text(
+                      Text(
                         'Start a conversation with your students',
                         textAlign: TextAlign.center,
                         style: TextStyle(
                           fontSize: 14,
-                          color: Colors.grey,
+                          color: emptyTheme.colorScheme.onSurfaceVariant,
                         ),
                       ),
                       const SizedBox(height: 32),
@@ -342,15 +341,16 @@ class _TeacherChatListPageState extends State<TeacherChatListPage> {
                 final lastMessageIsMine = chat['lastMessageIsMine'] as bool;
                 final lastMessage = chat['lastMessage'] as String;
 
+                final cardTheme = Theme.of(context);
                 return Container(
                   margin: const EdgeInsets.symmetric(vertical: 4, horizontal: 8),
                   child: Card(
                     elevation: hasUnread ? 2 : 0,
-                    color: hasUnread ? Color(0xff1458a3).withOpacity(0.1) : Colors.white,
+                    color: hasUnread ? Color(0xff1458a3).withOpacity(0.1) : (cardTheme.cardTheme.color ?? cardTheme.colorScheme.surface),
                     shape: RoundedRectangleBorder(
                       borderRadius: BorderRadius.circular(12),
                       side: BorderSide(
-                        color: hasUnread ? Color(0xff1458a3).withOpacity(0.3) : Colors.grey.shade200,
+                        color: hasUnread ? Color(0xff1458a3).withOpacity(0.3) : cardTheme.dividerColor,
                         width: hasUnread ? 1 : 0.5,
                       ),
                     ),
@@ -404,7 +404,7 @@ class _TeacherChatListPageState extends State<TeacherChatListPage> {
                                     chat['otherName'] as String,
                                     style: TextStyle(
                                       fontWeight: hasUnread ? FontWeight.bold : FontWeight.w600,
-                                      color: hasUnread ? Color(0xff1458a3) : Colors.black87,
+                                      color: hasUnread ? Color(0xff1458a3) : cardTheme.colorScheme.onSurface,
                                       fontSize: 15,
                                     ),
                                     maxLines: 1,
@@ -434,7 +434,7 @@ class _TeacherChatListPageState extends State<TeacherChatListPage> {
                             timeago.format(chat['lastMessageTime'] as DateTime),
                             style: TextStyle(
                               fontSize: 11,
-                              color: hasUnread ? Color(0xff1458a3) : Colors.grey.shade600,
+                              color: hasUnread ? Color(0xff1458a3) : cardTheme.colorScheme.onSurfaceVariant,
                               fontWeight: hasUnread ? FontWeight.w600 : FontWeight.normal,
                             ),
                           ),
@@ -454,7 +454,7 @@ class _TeacherChatListPageState extends State<TeacherChatListPage> {
                                 overflow: TextOverflow.ellipsis,
                                 style: TextStyle(
                                   fontSize: 13,
-                                  color: hasUnread ? Color(0xff1458a3) : Colors.grey.shade700,
+                                  color: hasUnread ? Color(0xff1458a3) : cardTheme.colorScheme.onSurfaceVariant,
                                   fontWeight: hasUnread ? FontWeight.w500 : FontWeight.normal,
                                 ),
                               ),
@@ -464,7 +464,7 @@ class _TeacherChatListPageState extends State<TeacherChatListPage> {
                       ),
                       trailing: Icon(
                         Icons.chevron_right,
-                        color: hasUnread ? Color(0xff1458a3) : Colors.grey,
+                        color: hasUnread ? Color(0xff1458a3) : cardTheme.colorScheme.onSurfaceVariant,
                         size: 20,
                       ),
                       onTap: () async {
@@ -497,7 +497,6 @@ class _TeacherChatListPageState extends State<TeacherChatListPage> {
             );
           },
         ),
-      ),
       floatingActionButton: FloatingActionButton(
         onPressed: _isStartingNewChat ? null : _startNewChat,
         backgroundColor: Color(0xff1458a3),

@@ -255,8 +255,7 @@ class _EditAssignmentPageState extends State<EditAssignmentPage> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: const Text("Edit Assignment", style: TextStyle(color: Colors.black)),
-        backgroundColor: Colors.white,
+        title: const Text("Edit Assignment"),
         elevation: 1,
         actions: [
           _isLoading

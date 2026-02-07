@@ -19,7 +19,7 @@ import 'screens/student/classroom/join_classroom_page.dart';
 import 'screens/teacher/timetable/teacher_timetable_page.dart';
 import 'screens/student/timetable/student_timetable_page.dart';
 import 'screens/student/quiz/student_answer_quiz_page.dart';
-
+import 'screens/settings_page.dart';
 
 class Routes {
   static const String login = '/';
@@ -29,6 +29,7 @@ class Routes {
   static const String teacher = '/dashboard/teacher';
   static const String admin = '/dashboard/admin';
   static const String adminUsers = '/admin/users';
+  static const String settings = '/settings';
   static const String forgotPassword = '/forgot-password';
   static const String createQuiz = '/create-quiz';
   static const String createSubject = '/create-subject';
@@ -95,6 +96,8 @@ class Routes {
         return MaterialPageRoute(
           builder: (_) => CreateAssignmentPage(classId: classId),
         );
+      case Routes.settings:
+        return MaterialPageRoute(builder: (_) => const SettingsPage());
       case forgotPassword:
         return MaterialPageRoute(builder: (_) => const ForgotPasswordScreen());
       case studentClassroomDashboard:

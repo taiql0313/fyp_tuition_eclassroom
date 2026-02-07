@@ -92,10 +92,8 @@ class _AttendancePageState extends State<AttendancePage> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: const Color(0xFFF8F9FA),
       appBar: AppBar(
         title: const Text("Attendance Hub"),
-        backgroundColor: const Color(0xff1458a3),
         foregroundColor: Colors.white,
         elevation: 0,
       ),

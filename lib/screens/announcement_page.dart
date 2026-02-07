@@ -11,7 +11,7 @@ class AnnouncementsPage extends StatelessWidget {
     final service = AnnouncementService();
 
     return Scaffold(
-      appBar: AppBar(title: const Text("Announcements"), backgroundColor: const Color(0xff1458a3)),
+      appBar: AppBar(title: const Text("Announcements")),
       body: StreamBuilder<QuerySnapshot>(
         stream: service.streamAnnouncements(),
         builder: (context, snapshot) {

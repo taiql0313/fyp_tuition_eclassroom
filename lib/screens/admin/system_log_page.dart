@@ -59,7 +59,6 @@ class _SystemLogPageState extends State<SystemLogPage> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: const Color(0xFFF5F7FA),
       appBar: AppBar(
         title: const Text(
           "System Logs",

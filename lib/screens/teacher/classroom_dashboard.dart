@@ -12,7 +12,6 @@ class ClassroomDashboard extends StatelessWidget {
     final String uid = FirebaseAuth.instance.currentUser?.uid ?? "";
 
     return Scaffold(
-      backgroundColor: Colors.white,
       appBar: AppBar(
         title: const Text('My Classrooms', style: TextStyle(fontWeight: FontWeight.bold)),
         centerTitle: true,

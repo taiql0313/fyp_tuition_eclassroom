@@ -297,7 +297,6 @@ class _GenerateInvoicesPageState extends State<GenerateInvoicesPage> {
     return Scaffold(
       appBar: AppBar(
         title: const Text("Generate Invoices"),
-        backgroundColor: const Color(0xff1458a3),
         foregroundColor: Colors.white,
       ),
       body: Column(

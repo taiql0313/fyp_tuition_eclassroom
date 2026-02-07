@@ -206,10 +206,8 @@ class _PaymentPageState extends State<PaymentPage> {
         : null;
 
     return Scaffold(
-      backgroundColor: const Color(0xFFF8F9FA),
       appBar: AppBar(
         title: const Text("Fees & Payments"),
-        backgroundColor: const Color(0xff1458a3),
         foregroundColor: Colors.white,
         elevation: 0,
       ),
@@ -413,16 +411,17 @@ class _PaymentPageState extends State<PaymentPage> {
     required Color color,
     required VoidCallback onTap,
   }) {
+    final theme = Theme.of(context);
     return InkWell(
       onTap: onTap,
       borderRadius: BorderRadius.circular(20),
       child: Container(
         padding: const EdgeInsets.all(20),
         decoration: BoxDecoration(
-          color: Colors.white,
+          color: theme.cardTheme.color ?? theme.colorScheme.surface,
           borderRadius: BorderRadius.circular(20),
           boxShadow: [
-            BoxShadow(color: Colors.grey.withOpacity(0.1), blurRadius: 10, offset: const Offset(0, 4)),
+            BoxShadow(color: Colors.black.withOpacity(0.15), blurRadius: 10, offset: const Offset(0, 4)),
           ],
         ),
         child: Column(
@@ -431,15 +430,15 @@ class _PaymentPageState extends State<PaymentPage> {
             Container(
               padding: const EdgeInsets.all(12),
               decoration: BoxDecoration(
-                color: color.withOpacity(0.1),
+                color: color.withOpacity(0.15),
                 shape: BoxShape.circle,
               ),
               child: Icon(icon, color: color, size: 28),
             ),
             const SizedBox(height: 16),
-            Text(title, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
+            Text(title, style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16, color: theme.colorScheme.onSurface)),
             const SizedBox(height: 4),
-            Text(subtitle, style: TextStyle(color: Colors.grey[500], fontSize: 12)),
+            Text(subtitle, style: TextStyle(color: theme.colorScheme.onSurfaceVariant, fontSize: 12)),
           ],
         ),
       ),
@@ -449,20 +448,21 @@ class _PaymentPageState extends State<PaymentPage> {
   Widget _buildTransactionTile(PaymentTransaction transaction) {
     final isCompleted = transaction.status == 'completed';
     
+    final theme = Theme.of(context);
     return Container(
       margin: const EdgeInsets.only(bottom: 12),
       decoration: BoxDecoration(
-        color: Colors.white,
+        color: theme.cardTheme.color ?? theme.colorScheme.surface,
         borderRadius: BorderRadius.circular(12),
         boxShadow: [
-          BoxShadow(color: Colors.grey.withOpacity(0.05), blurRadius: 4, offset: const Offset(0, 2)),
+          BoxShadow(color: Colors.black.withOpacity(0.1), blurRadius: 4, offset: const Offset(0, 2)),
         ],
       ),
       child: ListTile(
         leading: Container(
           padding: const EdgeInsets.all(8),
           decoration: BoxDecoration(
-            color: isCompleted ? Colors.green.shade50 : Colors.orange.shade50,
+            color: isCompleted ? Colors.green.withOpacity(0.2) : Colors.orange.withOpacity(0.2),
             borderRadius: BorderRadius.circular(8),
           ),
           child: Icon(
@@ -472,7 +472,7 @@ class _PaymentPageState extends State<PaymentPage> {
         ),
         title: Text(
           "Invoice Payment",
-          style: const TextStyle(fontWeight: FontWeight.bold),
+          style: TextStyle(fontWeight: FontWeight.bold, color: theme.colorScheme.onSurface),
         ),
         subtitle: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
@@ -480,7 +480,7 @@ class _PaymentPageState extends State<PaymentPage> {
             Text(
               DateFormat('MMM d, yyyy • h:mm a')
                   .format(TimezoneHelper.toMalaysiaTime(transaction.createdAt)),
-              style: TextStyle(color: Colors.grey[500], fontSize: 12),
+              style: TextStyle(color: theme.colorScheme.onSurfaceVariant, fontSize: 12),
             ),
             const SizedBox(height: 2),
             Container(
@@ -525,7 +525,6 @@ class _InvoicesPage extends StatelessWidget {
     return Scaffold(
       appBar: AppBar(
         title: const Text("My Invoices"),
-        backgroundColor: const Color(0xff1458a3),
         foregroundColor: Colors.white,
       ),
       body: StreamBuilder<List<Invoice>>(

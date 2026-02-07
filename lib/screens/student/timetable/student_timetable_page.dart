@@ -229,7 +229,6 @@ class _StudentTimetablePageState extends State<StudentTimetablePage> {
     return Scaffold(
       appBar: AppBar(
         title: const Text('My Timetable'),
-        backgroundColor: Colors.white,
         elevation: 0,
         iconTheme: const IconThemeData(color: Colors.black),
         actions: [

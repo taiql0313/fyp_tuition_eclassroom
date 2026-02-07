@@ -99,7 +99,6 @@ class _FaqPageState extends State<FaqPage> {
     }).toList();
 
     return Scaffold(
-      backgroundColor: const Color(0xFFF8F9FA),
       // Floating Action Button for AI Support
       floatingActionButton: FloatingActionButton.extended(
         onPressed: () {
@@ -119,7 +118,7 @@ class _FaqPageState extends State<FaqPage> {
             expandedHeight: 180.0,
             floating: false,
             pinned: true,
-            backgroundColor: const Color(0xff1458a3),
+            backgroundColor: Theme.of(context).appBarTheme.backgroundColor ?? Theme.of(context).colorScheme.primary,
             flexibleSpace: FlexibleSpaceBar(
               background: Container(
                 decoration: const BoxDecoration(

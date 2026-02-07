@@ -122,7 +122,6 @@ class _SubjectManagementPageState extends State<SubjectManagementPage> {
     return Scaffold(
       appBar: AppBar(
         title: const Text("Subject Management"),
-        backgroundColor: const Color(0xff1458a3),
         foregroundColor: Colors.white,
       ),
       body: Column(

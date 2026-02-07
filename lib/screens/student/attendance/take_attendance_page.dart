@@ -143,10 +143,8 @@ class _TakeAttendancePageState extends State<TakeAttendancePage> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: Colors.white,
       appBar: AppBar(
         title: const Text("Check-In"),
-        backgroundColor: Colors.white,
         foregroundColor: Colors.black,
         elevation: 0,
       ),

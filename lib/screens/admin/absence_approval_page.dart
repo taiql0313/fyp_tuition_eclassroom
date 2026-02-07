@@ -36,7 +36,6 @@ class _AbsenceApprovalPageState extends State<AbsenceApprovalPage> with SingleTi
     return Scaffold(
       appBar: AppBar(
         title: const Text("Absence Document Approval"),
-        backgroundColor: const Color(0xff1458a3),
         foregroundColor: Colors.white,
         bottom: TabBar(
           controller: _tabController,

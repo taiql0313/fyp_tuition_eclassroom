@@ -33,8 +33,9 @@ class _StudentDashboardState extends State<StudentDashboard> {
     final auth = context.read<AuthService>();
     final user = auth.currentUser;
 
+    final theme = Theme.of(context);
+    final appBarColor = theme.appBarTheme.backgroundColor ?? theme.colorScheme.primary;
     return Scaffold(
-      backgroundColor: const Color(0xFFF8F9FA),
       body: CustomScrollView(
         slivers: [
           // 1. App Bar with Real User Info & New UI Styling
@@ -42,22 +43,25 @@ class _StudentDashboardState extends State<StudentDashboard> {
             actions: [
               if (user != null) _buildNotificationButton(user.uid),
               IconButton(
-                icon: const Icon(Icons.chat_bubble_outline, color: Colors.white),
+                icon: Icon(Icons.chat_bubble_outline, color: theme.appBarTheme.foregroundColor ?? Colors.white),
                 onPressed: () => Navigator.push(
                   context,
                   MaterialPageRoute(builder: (_) => const StudentChatListPage()),
                 ),
               ),
               PopupMenuButton<String>(
-                icon: const Icon(Icons.more_vert, color: Colors.white),
+                icon: Icon(Icons.more_vert, color: theme.appBarTheme.foregroundColor ?? Colors.white),
                 onSelected: (value) async {
-                  if (value == 'logout') {
+                  if (value == 'settings') {
+                    Navigator.pushNamed(context, Routes.settings);
+                  } else if (value == 'logout') {
                     await auth.signOut();
                     if (mounted) Navigator.pushReplacementNamed(context, Routes.login);
                   }
                 },
                 itemBuilder: (context) => [
                   const PopupMenuItem(value: 'profile', child: Text('Profile')),
+                  const PopupMenuItem(value: 'settings', child: Text('Settings')),
                   const PopupMenuItem(
                     value: 'logout',
                     child: Text('Logout', style: TextStyle(color: Colors.red)),
@@ -68,11 +72,11 @@ class _StudentDashboardState extends State<StudentDashboard> {
             expandedHeight: 180.0,
             floating: false,
             pinned: true,
-            backgroundColor: const Color(0xFF1458A3),
+            backgroundColor: appBarColor,
             flexibleSpace: FlexibleSpaceBar(
               collapseMode: CollapseMode.pin,
               background: Container(
-                color: const Color(0xFF1458A3),
+                color: appBarColor,
                 padding: const EdgeInsets.all(20),
                 child: SafeArea(
                   child: Column(
@@ -81,15 +85,17 @@ class _StudentDashboardState extends State<StudentDashboard> {
                     children: [
                       Row(
                         children: [
-                          // Dynamic Avatar from Firebase User
                           Container(
                             width: 60,
                             height: 60,
-                            decoration: const BoxDecoration(color: Colors.white, shape: BoxShape.circle),
+                            decoration: BoxDecoration(
+                              color: theme.colorScheme.surface,
+                              shape: BoxShape.circle,
+                            ),
                             child: Center(
                               child: Text(
                                 user?.displayName?.substring(0, 1).toUpperCase() ?? "S",
-                                style: const TextStyle(fontSize: 24, fontWeight: FontWeight.bold, color: Color(0xFF1458A3)),
+                                style: TextStyle(fontSize: 24, fontWeight: FontWeight.bold, color: theme.colorScheme.primary),
                               ),
                             ),
                           ),
@@ -98,16 +104,16 @@ class _StudentDashboardState extends State<StudentDashboard> {
                             child: Column(
                               crossAxisAlignment: CrossAxisAlignment.start,
                               children: [
-                                Text("Welcome back,", style: TextStyle(color: Colors.white.withOpacity(0.9), fontSize: 14)),
+                                Text("Welcome back,", style: TextStyle(color: (theme.appBarTheme.foregroundColor ?? Colors.white).withOpacity(0.9), fontSize: 14)),
                                 const SizedBox(height: 4),
                                 Text(
                                   user?.displayName ?? "Student",
-                                  style: const TextStyle(color: Colors.white, fontSize: 22, fontWeight: FontWeight.bold),
+                                  style: TextStyle(color: theme.appBarTheme.foregroundColor ?? Colors.white, fontSize: 22, fontWeight: FontWeight.bold),
                                 ),
                                 SizedBox(height: 4),
                                 Text(
                                   user?.email ?? "ID: Loading...",
-                                  style: TextStyle(color: Colors.white.withOpacity(0.8), fontSize: 13),
+                                  style: TextStyle(color: (theme.appBarTheme.foregroundColor ?? Colors.white).withOpacity(0.8), fontSize: 13),
                                 ),
                               ],
                             ),
@@ -166,9 +172,10 @@ class _StudentDashboardState extends State<StudentDashboard> {
         }
 
         return Stack(
+          clipBehavior: Clip.none,
           children: [
             IconButton(
-              icon: const Icon(Icons.notifications_none, color: Colors.white),
+              icon: Icon(Icons.notifications_none, color: Theme.of(context).appBarTheme.foregroundColor ?? Colors.white),
               onPressed: () => Navigator.push(
                 context,
                 MaterialPageRoute(builder: (_) => const NotificationCenterPage()),
@@ -176,14 +183,21 @@ class _StudentDashboardState extends State<StudentDashboard> {
             ),
             if (unreadCount > 0)
               Positioned(
-                right: 8,
-                top: 8,
+                right: 6,
+                top: 6,
                 child: Container(
-                  width: 8,
-                  height: 8,
+                  width: 10,
+                  height: 10,
                   decoration: const BoxDecoration(
                     color: Colors.red,
                     shape: BoxShape.circle,
+                    boxShadow: [
+                      BoxShadow(
+                        color: Colors.black26,
+                        blurRadius: 2,
+                        offset: Offset(0, 1),
+                      ),
+                    ],
                   ),
                 ),
               ),
@@ -195,13 +209,15 @@ class _StudentDashboardState extends State<StudentDashboard> {
 
   // --- STAT CARDS DESIGN ---
   Widget _buildQuickStatsSection() {
+    final theme = Theme.of(context);
+    final onSurface = theme.colorScheme.onSurface;
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        const Row(
+        Row(
           children: [
-            Text("Overview", style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: Color(0xFF2D3748))),
-            Spacer(),
+            Text("Overview", style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: onSurface)),
+            const Spacer(),
           ],
         ),
         const SizedBox(height: 12),
@@ -222,12 +238,13 @@ class _StudentDashboardState extends State<StudentDashboard> {
   }
 
   Widget _buildStatCard(String title, String value, IconData icon, Color color, double progress) {
+    final theme = Theme.of(context);
     return Container(
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
-        color: Colors.white,
+        color: theme.cardTheme.color ?? theme.colorScheme.surface,
         borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: Colors.grey.shade200),
+        border: Border.all(color: theme.dividerColor),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -243,7 +260,7 @@ class _StudentDashboardState extends State<StudentDashboard> {
               Container(
                 width: 40,
                 height: 4,
-                decoration: BoxDecoration(color: Colors.grey.shade200, borderRadius: BorderRadius.circular(2)),
+                decoration: BoxDecoration(color: Theme.of(context).dividerColor, borderRadius: BorderRadius.circular(2)),
                 child: FractionallySizedBox(
                   alignment: Alignment.centerLeft,
                   widthFactor: progress,
@@ -253,7 +270,7 @@ class _StudentDashboardState extends State<StudentDashboard> {
             ],
           ),
           const SizedBox(height: 12),
-          Text(value, style: const TextStyle(fontSize: 20, fontWeight: FontWeight.bold, color: Color(0xFF2D3748))),
+          Text(value, style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold, color: Theme.of(context).colorScheme.onSurface)),
           const SizedBox(height: 4),
           Text(title, style: TextStyle(color: Colors.grey.shade600, fontSize: 13)),
         ],
@@ -268,11 +285,11 @@ class _StudentDashboardState extends State<StudentDashboard> {
       children: [
         Row(
           children: [
-            const Text("Recent Announcements", style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: Color(0xFF2D3748))),
+            Text("Recent Announcements", style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: Theme.of(context).colorScheme.onSurface)),
             const Spacer(),
             TextButton(
               onPressed: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const AnnouncementsPage())),
-              child: const Text("See All", style: TextStyle(color: Color(0xFF1458A3))),
+              child: Text("See All", style: TextStyle(color: Theme.of(context).colorScheme.primary)),
             ),
           ],
         ),
@@ -303,30 +320,31 @@ class _StudentDashboardState extends State<StudentDashboard> {
   }
 
   Widget _buildAnnouncementCard(Map<String, dynamic> data) {
+    final theme = Theme.of(context);
     return Container(
       width: 280,
       padding: const EdgeInsets.all(20),
       decoration: BoxDecoration(
-        color: Colors.white,
+        color: theme.cardTheme.color ?? theme.colorScheme.surface,
         borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: Colors.grey.shade200),
+        border: Border.all(color: theme.dividerColor),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Container(
             padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-            decoration: BoxDecoration(color: Colors.blue.withOpacity(0.1), borderRadius: BorderRadius.circular(20)),
+            decoration: BoxDecoration(color: Colors.blue.withOpacity(0.2), borderRadius: BorderRadius.circular(20)),
             child: Text(data['type']?.toString().toUpperCase() ?? 'NOTICE',
                 style: const TextStyle(color: Colors.blue, fontSize: 11, fontWeight: FontWeight.bold)),
           ),
           const SizedBox(height: 16),
           Text(data['title'] ?? '',
-              style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w600, color: Color(0xFF2D3748)),
+              style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600, color: theme.colorScheme.onSurface),
               maxLines: 2,
               overflow: TextOverflow.ellipsis),
           const Spacer(),
-          Text(data['course'] ?? 'General', style: TextStyle(fontSize: 12, color: Colors.grey.shade600)),
+          Text(data['course'] ?? 'General', style: TextStyle(fontSize: 12, color: theme.colorScheme.onSurfaceVariant)),
         ],
       ),
     );
@@ -337,7 +355,7 @@ class _StudentDashboardState extends State<StudentDashboard> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        const Text("Learning Tools", style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: Color(0xFF2D3748))),
+        Text("Learning Tools", style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: Theme.of(context).colorScheme.onSurface)),
         const SizedBox(height: 16),
         GridView.count(
           shrinkWrap: true,
@@ -365,13 +383,14 @@ class _StudentDashboardState extends State<StudentDashboard> {
   }
 
   Widget _buildLearningTool(String title, IconData icon, Color color, VoidCallback onTap) {
+    final theme = Theme.of(context);
     return GestureDetector(
       onTap: onTap,
       child: Container(
         decoration: BoxDecoration(
-          color: Colors.white,
+          color: theme.cardTheme.color ?? theme.colorScheme.surface,
           borderRadius: BorderRadius.circular(12),
-          border: Border.all(color: Colors.grey.shade200),
+          border: Border.all(color: theme.dividerColor),
         ),
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
@@ -382,7 +401,7 @@ class _StudentDashboardState extends State<StudentDashboard> {
               child: Icon(icon, size: 24, color: color),
             ),
             const SizedBox(height: 12),
-            Text(title, style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600), textAlign: TextAlign.center),
+            Text(title, style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: theme.colorScheme.onSurface), textAlign: TextAlign.center),
           ],
         ),
       ),
@@ -390,25 +409,28 @@ class _StudentDashboardState extends State<StudentDashboard> {
   }
 
   Widget _buildHelpCard() {
+    final theme = Theme.of(context);
+    final primary = theme.colorScheme.primary;
+    final onPrimary = theme.colorScheme.onPrimary;
     return Container(
       padding: const EdgeInsets.all(20),
-      decoration: BoxDecoration(color: const Color(0xFF1458A3), borderRadius: BorderRadius.circular(12)),
+      decoration: BoxDecoration(color: primary, borderRadius: BorderRadius.circular(12)),
       child: Row(
         children: [
-          const Icon(Icons.auto_awesome_outlined, size: 32, color: Colors.white),
+          Icon(Icons.auto_awesome_outlined, size: 32, color: onPrimary),
           const SizedBox(width: 16),
-          const Expanded(
+          Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text("Need Help?", style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: Colors.white)),
-                Text("Ask our AI Tutor", style: TextStyle(fontSize: 13, color: Colors.white70)),
+                Text("Need Help?", style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: onPrimary)),
+                Text("Ask our AI Tutor", style: TextStyle(fontSize: 13, color: onPrimary.withOpacity(0.8))),
               ],
             ),
           ),
           ElevatedButton(
             onPressed: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const FaqPage())),
-            style: ElevatedButton.styleFrom(backgroundColor: Colors.white, foregroundColor: const Color(0xFF1458A3)),
+            style: ElevatedButton.styleFrom(backgroundColor: theme.colorScheme.surface, foregroundColor: primary),
             child: const Text("Ask Now"),
           ),
         ],

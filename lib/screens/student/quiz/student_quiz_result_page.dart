@@ -28,10 +28,8 @@ class StudentQuizResultPage extends StatelessWidget {
     final percentage = maxTotalScore > 0 ? (totalScore / maxTotalScore * 100).round() : 0;
 
     return Scaffold(
-      backgroundColor: const Color(0xFFF8F9FA),
       appBar: AppBar(
-        title: const Text('Quiz Result', style: TextStyle(color: Colors.white)),
-        backgroundColor: const Color(0xFF1458A3),
+        title: const Text('Quiz Result'),
         iconTheme: const IconThemeData(color: Colors.white),
       ),
       body: SingleChildScrollView(

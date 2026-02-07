@@ -45,7 +45,6 @@ class _PaymentRemindersPageState extends State<PaymentRemindersPage> with Single
     return Scaffold(
       appBar: AppBar(
         title: const Text("Payment Reminders"),
-        backgroundColor: const Color(0xff1458a3),
         foregroundColor: Colors.white,
         bottom: TabBar(
           controller: _tabController,
