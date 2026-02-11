@@ -393,6 +393,44 @@ class _TeacherTimetablePageState extends State<TeacherTimetablePage> {
       
       print('DEBUG: Updated classroom $_selectedClassId with day: $dayName, time: $startTime-$endTime');
 
+      final classInfo = _teacherClasses.firstWhere(
+        (c) => c['classId'] == _selectedClassId,
+        orElse: () => {},
+      );
+
+      final baseSchedule = {
+        'dayOfWeek': _selectedDayOfWeek,
+        'startTime': startTime,
+        'endTime': endTime,
+      };
+
+      final timetablesRef = FirebaseFirestore.instance.collection('timetables');
+      final existingTimetable = await timetablesRef
+          .where('classId', isEqualTo: _selectedClassId)
+          .limit(1)
+          .get();
+
+      if (existingTimetable.docs.isEmpty) {
+        await timetablesRef.add({
+          'classId': _selectedClassId,
+          'className': classInfo['className'] ?? '',
+          'subjectName': classInfo['subject'] ?? '',
+          'teacherId': user.uid,
+          'status': 'approved',
+          'baseSchedule': baseSchedule,
+          'pendingChanges': null,
+          'createdAt': FieldValue.serverTimestamp(),
+          'lastModified': FieldValue.serverTimestamp(),
+        });
+      } else {
+        await existingTimetable.docs.first.reference.update({
+          'baseSchedule': baseSchedule,
+          'status': 'approved',
+          'pendingChanges': null,
+          'lastModified': FieldValue.serverTimestamp(),
+        });
+      }
+
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
@@ -648,59 +686,26 @@ class _TeacherTimetablePageState extends State<TeacherTimetablePage> {
 
                         const SizedBox(height: 24),
 
-                        // Status Info
                         if (_selectedClassId != null)
-                          FutureBuilder<QuerySnapshot>(
-                            future: FirebaseFirestore.instance
-                                .collection('timetables')
-                                .where('classId', isEqualTo: _selectedClassId)
-                                .limit(1)
-                                .get(),
-                            builder: (context, snapshot) {
-                              if (snapshot.hasData && snapshot.data!.docs.isNotEmpty) {
-                                final timetable = snapshot.data!.docs.first.data() as Map<String, dynamic>;
-                                final status = timetable['status'] as String? ?? 'pending_approval';
-                                
-                                Color statusColor;
-                                String statusText;
-                                switch (status) {
-                                  case 'approved':
-                                    statusColor = Colors.green;
-                                    statusText = 'Approved';
-                                    break;
-                                  case 'rejected':
-                                    statusColor = Colors.red;
-                                    statusText = 'Rejected';
-                                    break;
-                                  default:
-                                    statusColor = Colors.orange;
-                                    statusText = 'Pending Approval';
-                                }
-
-                                return Container(
-                                  padding: const EdgeInsets.all(12),
-                                  decoration: BoxDecoration(
-                                    color: statusColor.withOpacity(0.1),
-                                    borderRadius: BorderRadius.circular(8),
-                                    border: Border.all(color: statusColor),
+                          Container(
+                            padding: const EdgeInsets.all(12),
+                            decoration: BoxDecoration(
+                              color: Colors.green.withOpacity(0.08),
+                              borderRadius: BorderRadius.circular(8),
+                              border: Border.all(color: Colors.green),
+                            ),
+                            child: Row(
+                              children: const [
+                                Icon(Icons.check_circle, color: Colors.green),
+                                SizedBox(width: 8),
+                                Expanded(
+                                  child: Text(
+                                    'Slots are auto-validated with time locks. Saving applies immediately.',
+                                    style: TextStyle(color: Colors.green, fontWeight: FontWeight.w600),
                                   ),
-                                  child: Row(
-                                    children: [
-                                      Icon(Icons.info_outline, color: statusColor),
-                                      const SizedBox(width: 8),
-                                      Text(
-                                        'Status: $statusText',
-                                        style: TextStyle(
-                                          color: statusColor,
-                                          fontWeight: FontWeight.bold,
-                                        ),
-                                      ),
-                                    ],
-                                  ),
-                                );
-                              }
-                              return const SizedBox.shrink();
-                            },
+                                ),
+                              ],
+                            ),
                           ),
                       ],
                     ),
@@ -735,7 +740,7 @@ class _TeacherTimetablePageState extends State<TeacherTimetablePage> {
                               child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
                             )
                           : const Text(
-                              'Submit for Approval',
+                              'Save Timetable',
                               style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
                             ),
                     ),

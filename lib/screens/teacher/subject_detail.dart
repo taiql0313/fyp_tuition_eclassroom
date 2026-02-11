@@ -25,6 +25,14 @@ class SubjectDetailPage extends StatefulWidget {
 class _SubjectDetailPageState extends State<SubjectDetailPage> {
   String? _userRole;
   bool _isLoadingRole = true;
+  final TextEditingController _memberSearchController = TextEditingController();
+  bool _isMemberSearchVisible = false;
+
+  @override
+  void dispose() {
+    _memberSearchController.dispose();
+    super.dispose();
+  }
 
   @override
   void initState() {
@@ -593,11 +601,16 @@ class _SubjectDetailPageState extends State<SubjectDetailPage> {
 
                   return InkWell(
                     onTap: () {
-                      // Navigate to quiz answer page for students, or quiz detail for teachers
+                      // Navigate to quiz answer page for students, or quiz management for teachers
                       if (_isTeacher) {
-                        // TODO: Navigate to quiz detail/edit page for teachers
-                        ScaffoldMessenger.of(context).showSnackBar(
-                          const SnackBar(content: Text("Quiz management page coming soon")),
+                        Navigator.pushNamed(
+                          context,
+                          Routes.teacherQuizManagement,
+                          arguments: {
+                            'quizId': itemId,
+                            'quizData': itemData,
+                            'classId': widget.classId,
+                          },
                         );
                       } else {
                         // Navigate to answer quiz page for students
@@ -946,8 +959,15 @@ class _SubjectDetailPageState extends State<SubjectDetailPage> {
   }
 
   Widget _buildMembersList(List<Map<String, dynamic>> teacherList, List<Map<String, dynamic>> studentList) {
-    // Combine: Teacher first, then students
+    final query = _memberSearchController.text.trim().toLowerCase();
     final allMembers = [...teacherList, ...studentList];
+    final filteredMembers = query.isEmpty
+        ? allMembers
+        : allMembers.where((member) {
+            final name = (member['displayName'] ?? '').toString().toLowerCase();
+            final email = (member['email'] ?? '').toString().toLowerCase();
+            return name.contains(query) || email.contains(query);
+          }).toList();
 
     if (allMembers.isEmpty) {
       return _buildEmptyState("No members found", Icons.people_outline);
@@ -962,34 +982,54 @@ class _SubjectDetailPageState extends State<SubjectDetailPage> {
             children: [
               Expanded(
                 child: Text(
-                  "Class Members (${allMembers.length})",
+                  "Class Members (${filteredMembers.length}/${allMembers.length})",
                   style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
                 ),
               ),
               IconButton(
-                icon: const Icon(Icons.search),
+                icon: Icon(_isMemberSearchVisible ? Icons.close : Icons.search),
                 onPressed: () {
-                  // TODO: Implement search functionality
+                  setState(() {
+                    _isMemberSearchVisible = !_isMemberSearchVisible;
+                    if (!_isMemberSearchVisible) {
+                      _memberSearchController.clear();
+                    }
+                  });
                 },
               ),
-              // Only show add member button for teachers / 只为教师显示添加成员按钮
-              if (_isTeacher)
-                IconButton(
-                  icon: const Icon(Icons.person_add),
-                  onPressed: () {
-                    // TODO: Implement add member functionality
-                  },
-                ),
             ],
           ),
         ),
+        if (_isMemberSearchVisible || query.isNotEmpty)
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 16.0),
+            child: TextField(
+              controller: _memberSearchController,
+              decoration: InputDecoration(
+                hintText: 'Search members by name or email...',
+                prefixIcon: const Icon(Icons.search),
+                suffixIcon: query.isNotEmpty
+                    ? IconButton(
+                        icon: const Icon(Icons.clear),
+                        onPressed: () {
+                          setState(() {
+                            _memberSearchController.clear();
+                          });
+                        },
+                      )
+                    : null,
+                border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+              ),
+              onChanged: (_) => setState(() {}),
+            ),
+          ),
         // Members List
         Expanded(
           child: ListView.builder(
             padding: const EdgeInsets.symmetric(horizontal: 16),
-            itemCount: allMembers.length,
+            itemCount: filteredMembers.length,
             itemBuilder: (context, index) {
-              final member = allMembers[index];
+              final member = filteredMembers[index];
               final isTeacher = member['role'] == 'teacher';
               
               return _buildMemberCard(

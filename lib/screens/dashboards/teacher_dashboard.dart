@@ -277,7 +277,7 @@ class _TeacherDashboardState extends State<TeacherDashboard> {
                         const Color(0xFFE1F5FE), // Light blue
                         const Color(0xFF0277BD), // Dark blue
                         Routes.login,
-                        onTap: () => Navigator.pushNamed(context, Routes.teacherTimetable),
+                        onTap: () => Navigator.pushNamed(context, Routes.teacherTimetableChange),
                       ),
                     ],
                   ),

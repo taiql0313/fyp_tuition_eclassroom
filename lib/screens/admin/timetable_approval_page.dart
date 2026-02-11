@@ -19,81 +19,349 @@ class _TimetableApprovalPageState extends State<TimetableApprovalPage> {
         elevation: 0,
         iconTheme: const IconThemeData(color: Colors.black),
       ),
-      body: StreamBuilder<QuerySnapshot>(
-        stream: FirebaseFirestore.instance
-            .collection('timetables')
-            .where('status', isEqualTo: 'pending_approval')
-            .snapshots(),
-        builder: (context, snapshot) {
-          if (snapshot.connectionState == ConnectionState.waiting) {
-            return const Center(child: CircularProgressIndicator());
-          }
-
-          if (!snapshot.hasData || snapshot.data!.docs.isEmpty) {
-            return Center(
-              child: Column(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  Icon(Icons.check_circle_outline, size: 80, color: Colors.grey.shade300),
-                  const SizedBox(height: 16),
-                  Text(
-                    'No pending approvals',
-                    style: TextStyle(fontSize: 18, color: Colors.grey.shade600),
-                  ),
-                  const SizedBox(height: 8),
-                  Text(
-                    'All timetable requests have been processed',
-                    style: TextStyle(fontSize: 14, color: Colors.grey.shade500),
-                  ),
-                ],
-              ),
-            );
-          }
-
-          // Sort by lastModified (newest first) on client side
-          final pendingTimetables = snapshot.data!.docs.toList()
-            ..sort((a, b) {
-              final aData = a.data() as Map<String, dynamic>;
-              final bData = b.data() as Map<String, dynamic>;
-              
-              Timestamp? aTime;
-              Timestamp? bTime;
-              
-              if (aData['lastModified'] is Timestamp) {
-                aTime = aData['lastModified'] as Timestamp;
-              } else if (aData['createdAt'] is Timestamp) {
-                aTime = aData['createdAt'] as Timestamp;
-              }
-              
-              if (bData['lastModified'] is Timestamp) {
-                bTime = bData['lastModified'] as Timestamp;
-              } else if (bData['createdAt'] is Timestamp) {
-                bTime = bData['createdAt'] as Timestamp;
-              }
-              
-              if (aTime == null && bTime == null) return 0;
-              if (aTime == null) return 1;
-              if (bTime == null) return -1;
-              
-              return bTime.compareTo(aTime); // Descending order
-            });
-
-          return ListView.builder(
-            padding: const EdgeInsets.all(16),
-            itemCount: pendingTimetables.length,
-            itemBuilder: (context, index) {
-              final timetableDoc = pendingTimetables[index];
-              final timetableData = timetableDoc.data() as Map<String, dynamic>;
-              
-              return _buildTimetableCard(
-                timetableDoc.id,
-                timetableData,
-              );
-            },
-          );
-        },
+      body: SingleChildScrollView(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            _buildChangeRequestsSection(),
+            const SizedBox(height: 24),
+            _buildPendingTimetablesSection(),
+          ],
+        ),
       ),
     );
+  }
+
+  Widget _buildChangeRequestsSection() {
+    return StreamBuilder<QuerySnapshot>(
+      stream: FirebaseFirestore.instance
+          .collection('timetable_change_requests')
+          .where('status', isEqualTo: 'pending')
+          .orderBy('submittedAt', descending: true)
+          .snapshots(),
+      builder: (context, snapshot) {
+        if (snapshot.connectionState == ConnectionState.waiting) {
+          return const Center(child: CircularProgressIndicator());
+        }
+
+        final docs = snapshot.data?.docs ?? [];
+        if (docs.isEmpty) {
+          return Container(
+            padding: const EdgeInsets.all(20),
+            decoration: BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.circular(16),
+              boxShadow: [
+                BoxShadow(color: Colors.black.withOpacity(0.05), blurRadius: 8, offset: const Offset(0, 2)),
+              ],
+            ),
+            child: Row(
+              children: [
+                Icon(Icons.check_circle_outline, size: 32, color: Colors.green.shade300),
+                const SizedBox(width: 12),
+                const Expanded(
+                  child: Text(
+                    'No pending timetable change requests',
+                    style: TextStyle(fontSize: 16),
+                  ),
+                ),
+              ],
+            ),
+          );
+        }
+
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text('Timetable Change Requests', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+            const SizedBox(height: 12),
+            ...docs.map((doc) => _buildChangeRequestCard(doc.id, doc.data() as Map<String, dynamic>)).toList(),
+          ],
+        );
+      },
+    );
+  }
+
+  Widget _buildPendingTimetablesSection() {
+    return StreamBuilder<QuerySnapshot>(
+      stream: FirebaseFirestore.instance
+          .collection('timetables')
+          .where('status', isEqualTo: 'pending_approval')
+          .snapshots(),
+      builder: (context, snapshot) {
+        if (snapshot.connectionState == ConnectionState.waiting) {
+          return const Center(child: CircularProgressIndicator());
+        }
+
+        if (!snapshot.hasData || snapshot.data!.docs.isEmpty) {
+          return Container(
+            padding: const EdgeInsets.all(20),
+            decoration: BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.circular(16),
+              boxShadow: [
+                BoxShadow(color: Colors.black.withOpacity(0.05), blurRadius: 8, offset: const Offset(0, 2)),
+              ],
+            ),
+            child: Row(
+              children: [
+                Icon(Icons.schedule, size: 32, color: Colors.grey.shade400),
+                const SizedBox(width: 12),
+                const Expanded(
+                  child: Text(
+                    'No new timetable submissions',
+                    style: TextStyle(fontSize: 16),
+                  ),
+                ),
+              ],
+            ),
+          );
+        }
+
+        final pendingTimetables = snapshot.data!.docs.toList()
+          ..sort((a, b) {
+            final aData = a.data() as Map<String, dynamic>;
+            final bData = b.data() as Map<String, dynamic>;
+            Timestamp? aTime;
+            Timestamp? bTime;
+            if (aData['lastModified'] is Timestamp) {
+              aTime = aData['lastModified'] as Timestamp;
+            } else if (aData['createdAt'] is Timestamp) {
+              aTime = aData['createdAt'] as Timestamp;
+            }
+            if (bData['lastModified'] is Timestamp) {
+              bTime = bData['lastModified'] as Timestamp;
+            } else if (bData['createdAt'] is Timestamp) {
+              bTime = bData['createdAt'] as Timestamp;
+            }
+            if (aTime == null && bTime == null) return 0;
+            if (aTime == null) return 1;
+            if (bTime == null) return -1;
+            return bTime.compareTo(aTime);
+          });
+
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text('New Timetable Submissions', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+            const SizedBox(height: 12),
+            ...pendingTimetables.map((doc) => _buildTimetableCard(doc.id, doc.data() as Map<String, dynamic>)).toList(),
+          ],
+        );
+      },
+    );
+  }
+
+  Widget _buildChangeRequestCard(String requestId, Map<String, dynamic> data) {
+    final className = data['className'] as String? ?? 'Unknown Class';
+    final subject = data['subject'] as String? ?? '';
+    final teacherName = data['teacherName'] as String? ?? 'Teacher';
+    final reason = data['reason'] as String? ?? '';
+    final requestedSlot = data['requestedSlot'] as Map<String, dynamic>?;
+    final currentSlot = data['currentSlot'] as Map<String, dynamic>?;
+    final submittedAt = (data['submittedAt'] as Timestamp?)?.toDate();
+
+    return Container(
+      margin: const EdgeInsets.only(bottom: 16),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: Colors.blue.shade100, width: 2),
+        boxShadow: [
+          BoxShadow(color: Colors.black.withOpacity(0.05), blurRadius: 8, offset: const Offset(0, 4)),
+        ],
+      ),
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Icon(Icons.swap_horiz, color: Colors.blue.shade600),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(className, style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+                      if (subject.isNotEmpty)
+                        Text(subject, style: TextStyle(color: Colors.grey.shade600)),
+                    ],
+                  ),
+                ),
+                if (submittedAt != null)
+                  Text(
+                    DateFormat('MMM d, y h:mm a').format(submittedAt),
+                    style: TextStyle(fontSize: 12, color: Colors.grey.shade600),
+                  ),
+              ],
+            ),
+            const SizedBox(height: 12),
+            Text('Teacher: $teacherName', style: TextStyle(color: Colors.grey.shade700)),
+            const SizedBox(height: 12),
+            Text('Current Slot: ${_formatSlotMap(currentSlot)}'),
+            Text('Requested Slot: ${_formatSlotMap(requestedSlot)}'),
+            const SizedBox(height: 12),
+            Text('Reason:', style: TextStyle(color: Colors.grey.shade700, fontWeight: FontWeight.w600)),
+            Text(reason),
+            const SizedBox(height: 16),
+            Row(
+              children: [
+                Expanded(
+                  child: OutlinedButton.icon(
+                    icon: const Icon(Icons.close, color: Colors.red),
+                    label: const Text('Reject', style: TextStyle(color: Colors.red)),
+                    onPressed: () => _showRejectDialog(requestId, data),
+                  ),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: ElevatedButton.icon(
+                    icon: const Icon(Icons.check),
+                    label: const Text('Approve'),
+                    style: ElevatedButton.styleFrom(backgroundColor: Colors.green),
+                    onPressed: () => _approveChangeRequest(requestId, data),
+                  ),
+                ),
+              ],
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  String _formatSlotMap(Map<String, dynamic>? slot) {
+    if (slot == null) return 'Not scheduled';
+    final dayIndex = slot['dayOfWeek'] as int? ?? 0;
+    final start = slot['startTime'] as String? ?? '--:--';
+    final end = slot['endTime'] as String? ?? '--:--';
+    final days = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+    final dayName = dayIndex >= 0 && dayIndex < days.length ? days[dayIndex] : 'Unknown';
+    return '$dayName • $start - $end';
+  }
+
+  Future<void> _approveChangeRequest(String requestId, Map<String, dynamic> data) async {
+    final classId = data['classId'] as String? ?? '';
+    final requestedSlot = data['requestedSlot'] as Map<String, dynamic>?;
+    if (classId.isEmpty || requestedSlot == null) return;
+
+    final dayIndex = requestedSlot['dayOfWeek'] as int? ?? 0;
+    final startTime = requestedSlot['startTime'] as String? ?? '';
+    final endTime = requestedSlot['endTime'] as String? ?? '';
+
+    try {
+      // Update timetable document
+      final timetableSnapshot = await FirebaseFirestore.instance
+          .collection('timetables')
+          .where('classId', isEqualTo: classId)
+          .limit(1)
+          .get();
+
+      if (timetableSnapshot.docs.isNotEmpty) {
+        final timetableRef = timetableSnapshot.docs.first.reference;
+        await timetableRef.update({
+          'baseSchedule': {
+            'dayOfWeek': dayIndex,
+            'startTime': startTime,
+            'endTime': endTime,
+          },
+          'lastModified': FieldValue.serverTimestamp(),
+        });
+      }
+
+      // Update classroom info for quick reference
+      await FirebaseFirestore.instance.collection('classrooms').doc(classId).update({
+        'day': _formatFullDay(dayIndex),
+        'timeStart': startTime,
+        'timeEnd': endTime,
+      }).catchError((_) {});
+
+      // Update request status
+      await FirebaseFirestore.instance.collection('timetable_change_requests').doc(requestId).update({
+        'status': 'approved',
+        'adminComment': '',
+        'processedAt': FieldValue.serverTimestamp(),
+      });
+
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Timetable change approved'), backgroundColor: Colors.green),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Error approving request: $e')),
+        );
+      }
+    }
+  }
+
+  Future<void> _showRejectDialog(String requestId, Map<String, dynamic> data) async {
+    final controller = TextEditingController();
+    final result = await showDialog<bool>(
+      context: context,
+      builder: (context) {
+        return AlertDialog(
+          title: const Text('Reject Change Request'),
+          content: TextField(
+            controller: controller,
+            maxLines: 3,
+            decoration: const InputDecoration(
+              hintText: 'Reason for rejection...',
+            ),
+          ),
+          actions: [
+            TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('Cancel')),
+            ElevatedButton(onPressed: () => Navigator.pop(context, true), child: const Text('Reject')),
+          ],
+        );
+      },
+    );
+
+    if (result == true) {
+      await _rejectChangeRequest(requestId, controller.text.trim());
+    }
+  }
+
+  Future<void> _rejectChangeRequest(String requestId, String comment) async {
+    if (comment.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Please provide a reason for rejection')),
+      );
+      return;
+    }
+
+    try {
+      await FirebaseFirestore.instance.collection('timetable_change_requests').doc(requestId).update({
+        'status': 'rejected',
+        'adminComment': comment,
+        'processedAt': FieldValue.serverTimestamp(),
+      });
+
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Change request rejected'), backgroundColor: Colors.red),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Error rejecting request: $e')),
+        );
+      }
+    }
+  }
+
+  String _formatFullDay(int dayIndex) {
+    const days = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+    if (dayIndex >= 0 && dayIndex < days.length) {
+      return days[dayIndex];
+    }
+    return 'Monday';
   }
 
   Widget _buildTimetableCard(String timetableId, Map<String, dynamic> timetableData) {

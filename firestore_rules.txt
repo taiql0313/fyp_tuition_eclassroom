@@ -105,6 +105,14 @@ service cloud.firestore {
       allow delete: if request.auth != null && isTeacher();
     }
     
+    // --- TIMETABLE CHANGE REQUESTS ---
+    match /timetable_change_requests/{requestId} {
+      allow read: if request.auth != null;
+      allow create: if request.auth != null && isTeacher() && request.resource.data.teacherId == request.auth.uid;
+      allow update: if request.auth != null && isAdmin();
+      allow delete: if request.auth != null && isAdmin();
+    }
+    
     // --- CLASSROOMS COLLECTION ---
     match /classrooms/{classId} {
       allow read: if request.auth != null;

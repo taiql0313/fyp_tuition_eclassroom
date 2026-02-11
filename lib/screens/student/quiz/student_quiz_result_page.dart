@@ -23,6 +23,7 @@ class StudentQuizResultPage extends StatelessWidget {
     final mcqTotal = submissionData['mcqTotal'] ?? 0;
     final status = submissionData['status'] ?? 'graded';
     final quizTitle = quizData['title'] ?? 'Quiz Result';
+    final teacherFeedback = submissionData['teacherFeedback'] as String?;
 
     // Calculate percentage
     final percentage = maxTotalScore > 0 ? (totalScore / maxTotalScore * 100).round() : 0;
@@ -48,6 +49,42 @@ class StudentQuizResultPage extends StatelessWidget {
               status: status,
             ),
             const SizedBox(height: 24),
+
+            // Teacher's general feedback
+            if (teacherFeedback != null && teacherFeedback.isNotEmpty)
+              Container(
+                margin: const EdgeInsets.only(bottom: 24),
+                padding: const EdgeInsets.all(16),
+                decoration: BoxDecoration(
+                  color: Colors.purple.shade50,
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(color: Colors.purple.shade200),
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Row(
+                      children: [
+                        Icon(Icons.edit_note, size: 20, color: Colors.purple),
+                        SizedBox(width: 8),
+                        Text(
+                          "Teacher's Feedback",
+                          style: TextStyle(
+                            fontSize: 16,
+                            fontWeight: FontWeight.bold,
+                            color: Colors.purple,
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 8),
+                    Text(
+                      teacherFeedback,
+                      style: const TextStyle(fontSize: 14, color: Colors.black87),
+                    ),
+                  ],
+                ),
+              ),
 
             // Results Header
             const Text(
@@ -524,6 +561,7 @@ class StudentQuizResultPage extends StatelessWidget {
   Widget _buildShortAnswerResult(Map<String, dynamic> answer) {
     final studentAnswer = answer['studentAnswer'] as String? ?? '';
     final aiFeedback = answer['aiFeedback'] as String?;
+    final teacherFeedback = answer['teacherFeedback'] as String?;
     final status = answer['status'] as String?;
 
     return Column(
@@ -587,6 +625,42 @@ class StudentQuizResultPage extends StatelessWidget {
                 const SizedBox(height: 4),
                 Text(
                   aiFeedback,
+                  style: const TextStyle(fontSize: 13, color: Colors.black87),
+                ),
+              ],
+            ),
+          ),
+
+        // Teacher Feedback (if available)
+        if (teacherFeedback != null && teacherFeedback.isNotEmpty)
+          Container(
+            margin: const EdgeInsets.only(top: 8),
+            padding: const EdgeInsets.all(12),
+            decoration: BoxDecoration(
+              color: Colors.purple.shade50,
+              borderRadius: BorderRadius.circular(8),
+              border: Border.all(color: Colors.purple.shade200),
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Row(
+                  children: [
+                    Icon(Icons.edit_note, size: 16, color: Colors.purple),
+                    SizedBox(width: 4),
+                    Text(
+                      'Teacher Feedback:',
+                      style: TextStyle(
+                        fontSize: 12,
+                        fontWeight: FontWeight.w600,
+                        color: Colors.purple,
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  teacherFeedback,
                   style: const TextStyle(fontSize: 13, color: Colors.black87),
                 ),
               ],
