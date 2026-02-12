@@ -56,7 +56,7 @@ class _CreateAttendanceCodePageState extends State<CreateAttendanceCodePage> {
     return TimezoneHelper.getTodayDayName();
   }
 
-  // Stream to get only today's classes
+  // Stream to get regular classes scheduled for today (by weekday)
   Stream<QuerySnapshot> _getTodayClassesStream(String teacherId) {
     final todayDay = _getTodayDayName();
     return _db
@@ -64,6 +64,34 @@ class _CreateAttendanceCodePageState extends State<CreateAttendanceCodePage> {
         .where('teacherId', isEqualTo: teacherId)
         .where('day', isEqualTo: todayDay)
         .snapshots();
+  }
+
+  // Stream to get replacement classes - fetches all for teacher, filters by today in memory
+  // (avoids complex Firestore index for date range query)
+  Stream<List<QueryDocumentSnapshot<Map<String, dynamic>>>> _getTodayReplacementClassesStream(String teacherId) {
+    final now = TimezoneHelper.getMalaysiaTime();
+    final todayYear = now.year;
+    final todayMonth = now.month;
+    final todayDay = now.day;
+
+    return _db
+        .collection('replacement_classes')
+        .where('teacherId', isEqualTo: teacherId)
+        .where('status', isEqualTo: 'approved')
+        .snapshots()
+        .map((snapshot) {
+      return snapshot.docs.where((doc) {
+        final d = doc.data();
+        final rd = d['replacementDate'] as Timestamp?;
+        if (rd == null) return false;
+        final dt = rd.toDate();
+        // Compare date in Malaysia time - convert stored UTC to Malaysia for date comparison
+        final dtMalaysia = TimezoneHelper.toMalaysiaTime(dt);
+        return dtMalaysia.year == todayYear &&
+            dtMalaysia.month == todayMonth &&
+            dtMalaysia.day == todayDay;
+      }).toList();
+    });
   }
 
   void _handleGenerateCode(String classId, Map<String, dynamic> classData) async {
@@ -82,8 +110,9 @@ class _CreateAttendanceCodePageState extends State<CreateAttendanceCodePage> {
       return;
     }
 
+    final sessionKey = (classData['_sessionKey'] as String?) ?? classId;
     setState(() {
-      _isGenerating[classId] = true;
+      _isGenerating[sessionKey] = true;
     });
 
     try {
@@ -148,8 +177,9 @@ class _CreateAttendanceCodePageState extends State<CreateAttendanceCodePage> {
 
       if (!mounted) return;
 
+      final sessionKey = classData['_sessionKey'] as String? ?? classId;
       setState(() {
-        _isGenerating[classId] = false;
+        _isGenerating[sessionKey] = false;
       });
 
       // Wait a moment for Firestore stream to update before showing success
@@ -166,8 +196,9 @@ class _CreateAttendanceCodePageState extends State<CreateAttendanceCodePage> {
       );
     } catch (e) {
       if (!mounted) return;
+      final sessionKey = classData['_sessionKey'] as String? ?? classId;
       setState(() {
-        _isGenerating[classId] = false;
+        _isGenerating[sessionKey] = false;
       });
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
@@ -292,36 +323,94 @@ class _CreateAttendanceCodePageState extends State<CreateAttendanceCodePage> {
       body: StreamBuilder<QuerySnapshot>(
         stream: _getTodayClassesStream(user.uid),
         builder: (context, classesSnapshot) {
-          if (classesSnapshot.connectionState == ConnectionState.waiting) {
-            return const Center(child: CircularProgressIndicator());
-          }
+          return StreamBuilder<List<QueryDocumentSnapshot<Map<String, dynamic>>>>(
+            stream: _getTodayReplacementClassesStream(user.uid),
+            builder: (context, replacementsSnapshot) {
+              if (classesSnapshot.connectionState == ConnectionState.waiting &&
+                  replacementsSnapshot.connectionState == ConnectionState.waiting) {
+                return const Center(child: CircularProgressIndicator());
+              }
 
-          if (!classesSnapshot.hasData || classesSnapshot.data!.docs.isEmpty) {
-            return Center(
-              child: Column(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  const Icon(Icons.calendar_today, size: 80, color: Colors.grey),
-                  const SizedBox(height: 16),
-                  Text(
-                    "No classes scheduled for ${_getTodayDayName()}",
-                    style: const TextStyle(fontSize: 18, color: Colors.grey),
-                    textAlign: TextAlign.center,
+              if (replacementsSnapshot.hasError) {
+                return Center(
+                  child: Column(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      Icon(Icons.error_outline, size: 48, color: Colors.red.shade400),
+                      const SizedBox(height: 16),
+                      Text(
+                        'Error loading replacement classes: ${replacementsSnapshot.error}',
+                        style: TextStyle(color: Colors.red.shade700),
+                        textAlign: TextAlign.center,
+                      ),
+                    ],
                   ),
-                  const SizedBox(height: 8),
-                  Text(
-                    "Only classes scheduled for today are shown here",
-                    style: TextStyle(fontSize: 14, color: Colors.grey[600]),
-                    textAlign: TextAlign.center,
+                );
+              }
+
+              // Build list: regular classes (today's weekday) + replacement classes (today's date)
+              final regularDocs = classesSnapshot.data?.docs ?? [];
+              final replacementDocs = replacementsSnapshot.data ?? [];
+
+              final regularItems = regularDocs.map((doc) {
+                final data = Map<String, dynamic>.from(doc.data() as Map<String, dynamic>);
+                data['_sessionKey'] = doc.id;
+                return {
+                  'classId': doc.id,
+                  'data': data,
+                  'isReplacement': false,
+                  'replacementId': null as String?,
+                };
+              }).toList();
+
+              final replacementItems = replacementDocs.map((doc) {
+                final d = doc.data() as Map<String, dynamic>;
+                final replacementId = doc.id;
+                return {
+                  'classId': d['classId'] as String,
+                  'data': {
+                    'className': d['className'] ?? 'Class',
+                    'subject': d['subject'] ?? 'Subject',
+                    'section': d['section'],
+                    'day': DateFormat('EEE, MMM d').format(
+                      (d['replacementDate'] as Timestamp?)?.toDate() ?? DateTime.now(),
+                    ),
+                    'classTime': d['timeSlotLabel'] ?? '${d['startTime']}-${d['endTime']}',
+                    'timeStart': d['startTime'],
+                    'timeEnd': d['endTime'],
+                    '_sessionKey': 'replacement_$replacementId',
+                  },
+                  'isReplacement': true,
+                  'replacementId': replacementId,
+                };
+              }).toList();
+
+              final allItems = [...regularItems, ...replacementItems];
+
+              if (allItems.isEmpty) {
+                return Center(
+                  child: Column(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      const Icon(Icons.calendar_today, size: 80, color: Colors.grey),
+                      const SizedBox(height: 16),
+                      Text(
+                        "No classes scheduled for ${_getTodayDayName()}",
+                        style: const TextStyle(fontSize: 18, color: Colors.grey),
+                        textAlign: TextAlign.center,
+                      ),
+                      const SizedBox(height: 8),
+                      Text(
+                        "Regular and replacement classes for today are shown here",
+                        style: TextStyle(fontSize: 14, color: Colors.grey[600]),
+                        textAlign: TextAlign.center,
+                      ),
+                    ],
                   ),
-                ],
-              ),
-            );
-          }
+                );
+              }
 
-          final classes = classesSnapshot.data!.docs;
-
-          return SingleChildScrollView(
+              return SingleChildScrollView(
             padding: const EdgeInsets.all(20),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
@@ -344,7 +433,7 @@ class _CreateAttendanceCodePageState extends State<CreateAttendanceCodePage> {
                       const Icon(Icons.calendar_today, size: 14, color: Color(0xff1458a3)),
                       const SizedBox(width: 4),
                       Text(
-                        _getTodayDayName(),
+                        '${_getTodayDayName()}, ${DateFormat('MMM d').format(TimezoneHelper.getMalaysiaTime())}',
                         style: const TextStyle(
                           fontSize: 12,
                           fontWeight: FontWeight.bold,
@@ -358,7 +447,7 @@ class _CreateAttendanceCodePageState extends State<CreateAttendanceCodePage> {
             ),
             const SizedBox(height: 8),
             Text(
-              "Classes scheduled for today. Select a class to generate an attendance code.",
+              "Regular and replacement classes for today. Select a class to generate an attendance code.",
               style: TextStyle(fontSize: 14, color: Colors.grey[600]),
             ),
                 const SizedBox(height: 20),
@@ -367,17 +456,21 @@ class _CreateAttendanceCodePageState extends State<CreateAttendanceCodePage> {
                 ListView.separated(
                   shrinkWrap: true,
                   physics: const NeverScrollableScrollPhysics(),
-                  itemCount: classes.length,
+                  itemCount: allItems.length,
                   separatorBuilder: (c, i) => const SizedBox(height: 16),
                   itemBuilder: (context, index) {
-                    final classDoc = classes[index];
-                    final classData = classDoc.data() as Map<String, dynamic>;
-                    final classId = classDoc.id;
+                    final item = allItems[index];
+                    final classId = item['classId'] as String;
+                    final classData = item['data'] as Map<String, dynamic>;
+                    final isReplacement = item['isReplacement'] as bool;
+                    final sessionKey = isReplacement
+                        ? 'replacement_${item['replacementId']}'
+                        : classId;
 
                     return StreamBuilder<List<AttendanceSession>>(
                       stream: _attendanceService.streamClassSessions(classId),
                       builder: (context, sessionsSnapshot) {
-                        final isGenerating = _isGenerating[classId] ?? false;
+                        final isGenerating = _isGenerating[sessionKey] ?? false;
                         
                         // Show loading state while generating OR while waiting for stream to update
                         if (isGenerating || 
@@ -416,7 +509,11 @@ class _CreateAttendanceCodePageState extends State<CreateAttendanceCodePage> {
                         }
                         
                         final activeSessions = sessionsSnapshot.data ?? [];
-                        final activeSession = activeSessions.isNotEmpty ? activeSessions.first : null;
+                        final expectedSessionTime = classData['classTime'] as String?;
+                        final matchingSessions = expectedSessionTime != null
+                            ? activeSessions.where((s) => s.sessionTime == expectedSessionTime).toList()
+                            : activeSessions;
+                        final activeSession = matchingSessions.isNotEmpty ? matchingSessions.first : null;
                         final hasCode = activeSession != null;
 
                         return Container(
@@ -439,9 +536,39 @@ class _CreateAttendanceCodePageState extends State<CreateAttendanceCodePage> {
                               // Header Section
                               ListTile(
                                 contentPadding: const EdgeInsets.fromLTRB(20, 16, 20, 0),
-                                title: Text(
-                                  classData['subject'] ?? 'Subject',
-                                  style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 18),
+                                title: Row(
+                                  children: [
+                                    Expanded(
+                                      child: Text(
+                                        classData['subject'] ?? 'Subject',
+                                        style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 18),
+                                      ),
+                                    ),
+                                    if (isReplacement)
+                                      Container(
+                                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                                        decoration: BoxDecoration(
+                                          color: Colors.orange.shade100,
+                                          borderRadius: BorderRadius.circular(8),
+                                          border: Border.all(color: Colors.orange.shade300),
+                                        ),
+                                        child: Row(
+                                          mainAxisSize: MainAxisSize.min,
+                                          children: [
+                                            Icon(Icons.event_repeat, size: 14, color: Colors.orange.shade800),
+                                            const SizedBox(width: 4),
+                                            Text(
+                                              'Replacement',
+                                              style: TextStyle(
+                                                fontSize: 11,
+                                                fontWeight: FontWeight.bold,
+                                                color: Colors.orange.shade800,
+                                              ),
+                                            ),
+                                          ],
+                                        ),
+                                      ),
+                                  ],
                                 ),
                                 subtitle: Column(
                                   crossAxisAlignment: CrossAxisAlignment.start,
@@ -631,6 +758,8 @@ class _CreateAttendanceCodePageState extends State<CreateAttendanceCodePage> {
                 ),
               ],
             ),
+          );
+            },
           );
         },
       ),

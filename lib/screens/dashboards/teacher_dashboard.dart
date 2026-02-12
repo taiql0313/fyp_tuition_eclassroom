@@ -176,14 +176,14 @@ class _TeacherDashboardState extends State<TeacherDashboard> {
                         ),
                       ),
 
-                      // 4. Upcoming Quizzes
+                      // 4. Total Classes
                       _buildOverviewCard(
                         context,
-                        icon: Icons.quiz_outlined,
+                        icon: Icons.class_outlined,
                         iconColor: const Color(0xFF9C27B0), // Purple
-                        mainText: _buildUpcomingQuizzesCount(uid),
-                        subtitle: "Upcoming Quizzes",
-                        onViewTap: () => Navigator.pushNamed(context, Routes.createQuiz),
+                        mainText: _buildTotalClassesCount(uid),
+                        subtitle: "Total Classes",
+                        onViewTap: () => Navigator.pushNamed(context, Routes.classroomDashboard),
                       ),
                     ],
                   ),
@@ -227,16 +227,6 @@ class _TeacherDashboardState extends State<TeacherDashboard> {
 
                       _teacherTile(
                         context,
-                        'Quizzes',
-                        Icons.quiz_outlined,
-                        const Color(0xFFF3E5F5), // Light purple
-                        const Color(0xFF7B1FA2), // Dark purple
-                        Routes.login,
-                        onTap: () => Navigator.pushNamed(context, Routes.createQuiz),
-                      ),
-
-                      _teacherTile(
-                        context,
                         'Student Analytics',
                         Icons.analytics_outlined,
                         const Color(0xFFFFF3E0), // Light orange
@@ -269,11 +259,11 @@ class _TeacherDashboardState extends State<TeacherDashboard> {
                         onTap: () {},
                       ),
 
-                      // TIMETABLE TILE
+                      // REPLACEMENT CLASS TILE
                       _teacherTile(
                         context,
-                        'Timetable',
-                        Icons.schedule_outlined,
+                        'Replacement\nClass',
+                        Icons.event_repeat,
                         const Color(0xFFE1F5FE), // Light blue
                         const Color(0xFF0277BD), // Dark blue
                         Routes.login,
@@ -532,22 +522,21 @@ class _TeacherDashboardState extends State<TeacherDashboard> {
     );
   }
 
-  Widget _buildUpcomingQuizzesCount(String teacherId) {
+  Widget _buildTotalClassesCount(String teacherId) {
     return StreamBuilder<QuerySnapshot>(
       stream: FirebaseFirestore.instance
-          .collection('quizzes')
+          .collection('classrooms')
           .where('teacherId', isEqualTo: teacherId)
           .snapshots(),
       builder: (context, snapshot) {
         if (!snapshot.hasData) {
-          return Text("0 scheduled", style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold, color: Theme.of(context).colorScheme.onSurface));
+          return Text("0 classes", style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold, color: Theme.of(context).colorScheme.onSurface));
         }
 
-        // Count all quizzes (since there's no scheduledDate field, count all as "scheduled")
         final count = snapshot.data!.docs.length;
 
         return Text(
-          "$count scheduled",
+          "$count classes",
           style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold, color: Theme.of(context).colorScheme.onSurface),
         );
       },

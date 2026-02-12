@@ -112,6 +112,25 @@ service cloud.firestore {
       allow update: if request.auth != null && isAdmin();
       allow delete: if request.auth != null && isAdmin();
     }
+
+    // --- REPLACEMENT CLASSES (one-time replacement class scheduling) ---
+    match /replacement_classes/{replacementId} {
+      // Teachers can read their own replacement classes; admins can read all
+      allow read: if request.auth != null &&
+        (resource.data.teacherId == request.auth.uid || isAdmin());
+      
+      // Teachers can create replacement classes for their own classes
+      allow create: if request.auth != null && isTeacher() && 
+        request.resource.data.teacherId == request.auth.uid;
+      
+      // Teachers can update their own (e.g., cancel); admins can update any
+      allow update: if request.auth != null &&
+        (resource.data.teacherId == request.auth.uid || isAdmin());
+      
+      // Teachers can delete their own; admins can delete any
+      allow delete: if request.auth != null &&
+        (resource.data.teacherId == request.auth.uid || isAdmin());
+    }
     
     // --- CLASSROOMS COLLECTION ---
     match /classrooms/{classId} {

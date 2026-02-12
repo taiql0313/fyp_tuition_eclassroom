@@ -134,6 +134,87 @@ class _CreateClassroomPageState extends State<CreateClassroomPage> {
 
   bool get _isAdmin => _currentUser?.role == 'admin';
 
+  // Convert day name string to Dart weekday int (Monday=1 ... Sunday=7)
+  int _dayNameToWeekday(String dayName) {
+    const dayMap = {
+      'Monday': 1,
+      'Tuesday': 2,
+      'Wednesday': 3,
+      'Thursday': 4,
+      'Friday': 5,
+      'Saturday': 6,
+      'Sunday': 7,
+    };
+    return dayMap[dayName] ?? 1;
+  }
+
+  // Lock time slots in the timeLocks collection for current and next month
+  Future<void> _lockTimeSlotsForClass({
+    required String classId,
+    required String timetableId,
+    required String teacherId,
+    required String className,
+    required int dayOfWeek,
+    required String timeSlot,
+  }) async {
+    final now = DateTime.now();
+    
+    // Lock for current month and next month
+    final monthsToLock = [
+      {'year': now.year, 'month': now.month},
+      {
+        'year': now.month == 12 ? now.year + 1 : now.year,
+        'month': now.month == 12 ? 1 : now.month + 1,
+      },
+    ];
+
+    for (final period in monthsToLock) {
+      final year = period['year']!;
+      final month = period['month']!;
+      
+      for (int day = 1; day <= 31; day++) {
+        try {
+          final date = DateTime(year, month, day);
+          if (date.month != month) break; // Exceeded month boundary
+
+          // Check if this date matches the selected day of week
+          if (date.weekday == dayOfWeek) {
+            final dateStr = DateFormat('yyyy-MM-dd').format(date);
+            final lockDocRef = FirebaseFirestore.instance
+                .collection('timeLocks')
+                .doc('$dateStr-$timeSlot');
+
+            final lockDoc = await lockDocRef.get();
+            final newLock = {
+              'classId': classId,
+              'teacherId': teacherId,
+              'subjectName': className,
+              'timetableId': timetableId,
+            };
+
+            if (lockDoc.exists) {
+              final currentLocks = lockDoc.data()?['lockedBy'] as List<dynamic>? ?? [];
+              // Only add if not already locked by this class
+              final exists = currentLocks.any((lock) => lock['classId'] == classId);
+              if (!exists) {
+                currentLocks.add(newLock);
+                await lockDocRef.update({'lockedBy': currentLocks});
+              }
+            } else {
+              await lockDocRef.set({
+                'date': dateStr,
+                'timeSlot': timeSlot,
+                'lockedBy': [newLock],
+              });
+            }
+          }
+        } catch (e) {
+          continue;
+        }
+      }
+    }
+  }
+
   // 2. The "Save to Firebase" function
   Future<void> _saveClassroom() async {
     // 1. Get the current logged-in teacher's info
@@ -216,7 +297,7 @@ class _CreateClassroomPageState extends State<CreateClassroomPage> {
       }
 
       // 2. Add to "classrooms" collection
-      await FirebaseFirestore.instance.collection('classrooms').add({
+      final classroomRef = await FirebaseFirestore.instance.collection('classrooms').add({
         'className': _nameController.text,
         'subject': subject.name,
         'subjectId': _selectedSubjectId,
@@ -241,10 +322,43 @@ class _CreateClassroomPageState extends State<CreateClassroomPage> {
         'createdAt': FieldValue.serverTimestamp(),
       });
 
+      // 3. Auto-save timetable entry (no admin approval needed)
+      final classId = classroomRef.id;
+      final dayOfWeek = _dayNameToWeekday(_selectedDay!);
+      
+      final baseSchedule = {
+        'dayOfWeek': dayOfWeek,
+        'startTime': timeStart,
+        'endTime': timeEnd,
+      };
+
+      final timetableRef = await FirebaseFirestore.instance.collection('timetables').add({
+        'classId': classId,
+        'className': _nameController.text,
+        'subjectName': subject.name,
+        'teacherId': user.uid,
+        'status': 'approved',
+        'baseSchedule': baseSchedule,
+        'pendingChanges': null,
+        'createdAt': FieldValue.serverTimestamp(),
+        'lastModified': FieldValue.serverTimestamp(),
+      });
+
+      // 4. Lock the time slot for this teacher (current month + next month)
+      final timeSlotStr = '$timeStart-$timeEnd';
+      await _lockTimeSlotsForClass(
+        classId: classId,
+        timetableId: timetableRef.id,
+        teacherId: user.uid,
+        className: _nameController.text,
+        dayOfWeek: dayOfWeek,
+        timeSlot: timeSlotStr,
+      );
+
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
-            content: Text("Classroom created successfully!"),
+            content: Text("Classroom created and timetable saved automatically!"),
             backgroundColor: Colors.green,
           ),
         );
