@@ -45,6 +45,40 @@ class _TimetableApprovalPageState extends State<TimetableApprovalPage> {
           return const Center(child: CircularProgressIndicator());
         }
 
+        if (snapshot.hasError) {
+          return Container(
+            padding: const EdgeInsets.all(20),
+            margin: const EdgeInsets.only(bottom: 16),
+            decoration: BoxDecoration(
+              color: Colors.red.shade50,
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(color: Colors.red.shade200),
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    Icon(Icons.error_outline, color: Colors.red.shade700),
+                    const SizedBox(width: 8),
+                    Text('Error loading change requests', style: TextStyle(fontWeight: FontWeight.bold, color: Colors.red.shade700)),
+                  ],
+                ),
+                const SizedBox(height: 8),
+                Text(
+                  '${snapshot.error}',
+                  style: TextStyle(fontSize: 13, color: Colors.red.shade900),
+                ),
+                const SizedBox(height: 8),
+                Text(
+                  'If you see "index" in the error, run: firebase deploy --only firestore:indexes',
+                  style: TextStyle(fontSize: 12, fontStyle: FontStyle.italic, color: Colors.red.shade800),
+                ),
+              ],
+            ),
+          );
+        }
+
         final docs = snapshot.data?.docs ?? [];
         if (docs.isEmpty) {
           return Container(

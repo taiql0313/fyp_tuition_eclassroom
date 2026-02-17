@@ -17,6 +17,23 @@
         { "fieldPath": "status", "order": "ASCENDING" },
         { "fieldPath": "replacementDate", "order": "ASCENDING" }
       ]
+    },
+    {
+      "collectionGroup": "timetable_change_requests",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "classId", "order": "ASCENDING" },
+        { "fieldPath": "teacherId", "order": "ASCENDING" },
+        { "fieldPath": "submittedAt", "order": "DESCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "timetable_change_requests",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "status", "order": "ASCENDING" },
+        { "fieldPath": "submittedAt", "order": "DESCENDING" }
+      ]
     }
   ],
   "fieldOverrides": []
