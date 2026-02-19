@@ -302,7 +302,7 @@ class _CreateClassroomPageState extends State<CreateClassroomPage> {
         'subject': subject.name,
         'subjectId': _selectedSubjectId,
         'subjectPrice': subject.price,
-        'classCode': _codeController.text,
+        'classCode': _codeController.text.trim().toUpperCase(), // Normalize to uppercase for case-insensitive search
         'section': _sectionController.text,
         'description': _descController.text,
         

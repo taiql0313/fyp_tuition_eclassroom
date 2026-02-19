@@ -94,7 +94,12 @@ Please respond in JSON format only:
   "feedback": "<your feedback here>"
 }
 
-Be fair but strict. Give full marks (2) only if the answer is correct or demonstrates good understanding. Give partial marks (1) if partially correct. Give 0 if wrong or irrelevant.''';
+Grading rules:
+- Give FULL marks (2) if the student's answer is correct, contains the key answer, or is clearly equivalent (e.g. reference "China" and student wrote "country China", "China", "The answer is China" — all should get 2 marks).
+- Do NOT deduct marks for extra wording that does not change the meaning (e.g. "country China" when reference is "China" is correct).
+- Give 1 mark only when the answer is partly right but missing the main point or has a significant error.
+- Give 0 only when the answer is wrong or irrelevant.
+Be fair: equivalent or containing-the-correct-answer responses should get full marks (2).''';
   }
 
   /// Call Groq API / 调用 Groq API

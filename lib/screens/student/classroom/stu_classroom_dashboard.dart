@@ -33,9 +33,24 @@ class StudentClassroomDashboard extends StatelessWidget {
 
                 final userData = userSnapshot.data!.data() as Map<String, dynamic>?;
                 final classIds = List<String>.from(userData?['classIds'] ?? []);
-                final classCount = classIds.length;
-
-                return _buildHeader(classCount.toString(), "0", "0%");
+                
+                // Count only non-archived classes
+                return StreamBuilder<QuerySnapshot>(
+                  stream: FirebaseFirestore.instance
+                      .collection('classrooms')
+                      .where(FieldPath.documentId, whereIn: classIds.isEmpty ? [''] : classIds.take(30).toList())
+                      .snapshots(),
+                  builder: (context, classSnapshot) {
+                    int activeCount = 0;
+                    if (classSnapshot.hasData) {
+                      activeCount = classSnapshot.data!.docs.where((doc) {
+                        final data = doc.data() as Map<String, dynamic>;
+                        return data['isArchived'] != true;
+                      }).length;
+                    }
+                    return _buildHeader(activeCount.toString(), "0", "0%");
+                  },
+                );
               },
             ),
 
@@ -91,7 +106,33 @@ class StudentClassroomDashboard extends StatelessWidget {
                         return const Center(child: Text("No classrooms found."));
                       }
 
-                      final classDocs = snapshot.data!.docs;
+                      // Filter out archived classes - students cannot see archived classes
+                      final classDocs = snapshot.data!.docs.where((doc) {
+                        final data = doc.data() as Map<String, dynamic>;
+                        return data['isArchived'] != true;
+                      }).toList();
+
+                      if (classDocs.isEmpty) {
+                        return Center(
+                          child: Column(
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            children: [
+                              const Icon(Icons.class_outlined, size: 80, color: Colors.grey),
+                              const SizedBox(height: 16),
+                              const Text(
+                                "No active classrooms",
+                                style: TextStyle(fontSize: 18, color: Colors.grey),
+                              ),
+                              const SizedBox(height: 8),
+                              Text(
+                                "Tap the + button to join a classroom",
+                                style: TextStyle(fontSize: 14, color: Colors.grey.shade600),
+                              ),
+                            ],
+                          ),
+                        );
+                      }
+
                       return GridView.builder(
                         shrinkWrap: true,
                         physics: const NeverScrollableScrollPhysics(),

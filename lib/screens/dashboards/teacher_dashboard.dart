@@ -127,66 +127,10 @@ class _TeacherDashboardState extends State<TeacherDashboard> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  // Overview Section
+                  // Overview Section - Latest Quiz Marks
                   const Text("Overview", style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
                   const SizedBox(height: 15),
-
-                  // Overview Cards Grid
-                  GridView.count(
-                    shrinkWrap: true,
-                    physics: const NeverScrollableScrollPhysics(),
-                    crossAxisCount: 2,
-                    childAspectRatio: 1.3,
-                    crossAxisSpacing: 15,
-                    mainAxisSpacing: 15,
-                    children: [
-                      // 1. Pending Assignments
-                      _buildOverviewCard(
-                        context,
-                        icon: Icons.assignment_outlined,
-                        iconColor: const Color(0xFFFF9800), // Orange
-                        mainText: _buildPendingAssignmentsCount(uid),
-                        subtitle: "Pending Assignments",
-                        onViewTap: () => Navigator.pushNamed(context, Routes.classroomDashboard),
-                      ),
-
-                      // 2. Today's Attendance
-                      _buildOverviewCard(
-                        context,
-                        icon: Icons.how_to_reg_outlined,
-                        iconColor: const Color(0xFF4CAF50), // Green
-                        mainText: _buildTodayAttendance(uid),
-                        subtitle: "Today's Attendance",
-                        onViewTap: () => Navigator.push(
-                          context,
-                          MaterialPageRoute(builder: (_) => const CreateAttendanceCodePage()),
-                        ),
-                      ),
-
-                      // 3. Unread Messages
-                      _buildOverviewCard(
-                        context,
-                        icon: Icons.chat_bubble_outline,
-                        iconColor: const Color(0xFF2196F3), // Blue
-                        mainText: _buildUnreadMessagesCount(uid),
-                        subtitle: "Unread Messages",
-                        onViewTap: () => Navigator.push(
-                          context,
-                          MaterialPageRoute(builder: (_) => const TeacherChatListPage()),
-                        ),
-                      ),
-
-                      // 4. Total Classes
-                      _buildOverviewCard(
-                        context,
-                        icon: Icons.class_outlined,
-                        iconColor: const Color(0xFF9C27B0), // Purple
-                        mainText: _buildTotalClassesCount(uid),
-                        subtitle: "Total Classes",
-                        onViewTap: () => Navigator.pushNamed(context, Routes.classroomDashboard),
-                      ),
-                    ],
-                  ),
+                  _buildLatestQuizMarksTable(uid),
 
                   const SizedBox(height: 30),
                   const Text("Class Management", style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
@@ -727,6 +671,318 @@ class _TeacherDashboardState extends State<TeacherDashboard> {
 
       return allActivities;
     });
+  }
+
+  Widget _buildLatestQuizMarksTable(String teacherId) {
+    // Try with orderBy first, fallback to without orderBy if index missing
+    return StreamBuilder<QuerySnapshot>(
+      stream: FirebaseFirestore.instance
+          .collection('quizzes')
+          .where('teacherId', isEqualTo: teacherId)
+          .snapshots(),
+      builder: (context, quizSnapshot) {
+        if (quizSnapshot.connectionState == ConnectionState.waiting) {
+          return const Center(child: Padding(padding: EdgeInsets.all(20), child: CircularProgressIndicator()));
+        }
+
+        if (quizSnapshot.hasError) {
+          return Container(
+            padding: const EdgeInsets.all(20),
+            decoration: BoxDecoration(
+              color: Theme.of(context).cardColor,
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(color: Colors.red.shade300),
+            ),
+            child: Column(
+              children: [
+                const Icon(Icons.error_outline, color: Colors.red, size: 32),
+                const SizedBox(height: 8),
+                Text(
+                  'Error loading quiz: ${quizSnapshot.error}',
+                  style: const TextStyle(color: Colors.red),
+                  textAlign: TextAlign.center,
+                ),
+              ],
+            ),
+          );
+        }
+
+        if (!quizSnapshot.hasData || quizSnapshot.data!.docs.isEmpty) {
+          return Container(
+            padding: const EdgeInsets.all(20),
+            decoration: BoxDecoration(
+              color: Theme.of(context).cardColor,
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(color: Colors.grey.shade300),
+            ),
+            child: const Center(
+              child: Text('No quizzes created yet', style: TextStyle(color: Colors.grey)),
+            ),
+          );
+        }
+
+        // Find newest quiz by sorting in memory (fallback if orderBy index missing)
+        final allQuizzes = quizSnapshot.data!.docs.toList();
+        allQuizzes.sort((a, b) {
+          final aData = a.data() as Map<String, dynamic>;
+          final bData = b.data() as Map<String, dynamic>;
+          final aTime = aData['createdAt'] as Timestamp?;
+          final bTime = bData['createdAt'] as Timestamp?;
+          if (aTime == null && bTime == null) return 0;
+          if (aTime == null) return 1;
+          if (bTime == null) return -1;
+          return bTime.compareTo(aTime); // Descending
+        });
+
+        final newestQuiz = allQuizzes.first;
+        final quizData = newestQuiz.data() as Map<String, dynamic>;
+        final quizId = newestQuiz.id;
+        final classId = quizData['classId'] as String?;
+        final quizTitle = quizData['title'] as String? ?? 'Untitled Quiz';
+
+        print('DEBUG: Found newest quiz: $quizTitle, classId=$classId, quizId=$quizId');
+
+        if (classId == null || classId.isEmpty) {
+          return Container(
+            padding: const EdgeInsets.all(20),
+            decoration: BoxDecoration(
+              color: Theme.of(context).cardColor,
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(color: Colors.grey.shade300),
+            ),
+            child: const Center(
+              child: Text('Latest quiz has no class assigned', style: TextStyle(color: Colors.grey)),
+            ),
+          );
+        }
+
+        // Get class name
+        return StreamBuilder<DocumentSnapshot>(
+          stream: FirebaseFirestore.instance.collection('classrooms').doc(classId).snapshots(),
+          builder: (context, classSnapshot) {
+            final classData = classSnapshot.data?.data() as Map<String, dynamic>?;
+            final className = classData?['className'] as String? ?? 'Unknown Class';
+
+            // Get all students in this class
+            return StreamBuilder<QuerySnapshot>(
+              stream: FirebaseFirestore.instance
+                  .collection('users')
+                  .where('classIds', arrayContains: classId)
+                  .where('role', isEqualTo: 'student')
+                  .snapshots(),
+              builder: (context, studentsSnapshot) {
+                if (studentsSnapshot.connectionState == ConnectionState.waiting) {
+                  return const Center(child: Padding(padding: EdgeInsets.all(20), child: CircularProgressIndicator()));
+                }
+
+                if (studentsSnapshot.hasError) {
+                  print('DEBUG: Error loading students: ${studentsSnapshot.error}');
+                  return Container(
+                    padding: const EdgeInsets.all(20),
+                    decoration: BoxDecoration(
+                      color: Theme.of(context).cardColor,
+                      borderRadius: BorderRadius.circular(12),
+                      border: Border.all(color: Colors.red.shade300),
+                    ),
+                    child: Text('Error loading students: ${studentsSnapshot.error}', style: const TextStyle(color: Colors.red)),
+                  );
+                }
+
+                final students = studentsSnapshot.data?.docs ?? [];
+                print('DEBUG: Found ${students.length} students in class $classId');
+
+                  // Get quiz submissions
+                  return StreamBuilder<QuerySnapshot>(
+                    stream: FirebaseFirestore.instance
+                        .collection('quiz_submissions')
+                        .where('quizId', isEqualTo: quizId)
+                        .snapshots(),
+                    builder: (context, submissionsSnapshot) {
+                      if (submissionsSnapshot.hasError) {
+                        print('DEBUG: Error loading submissions: ${submissionsSnapshot.error}');
+                        return Container(
+                          padding: const EdgeInsets.all(20),
+                          decoration: BoxDecoration(
+                            color: Theme.of(context).cardColor,
+                            borderRadius: BorderRadius.circular(12),
+                            border: Border.all(color: Colors.red.shade300),
+                          ),
+                          child: Text('Error loading submissions: ${submissionsSnapshot.error}', style: const TextStyle(color: Colors.red)),
+                        );
+                      }
+
+                      final submissions = submissionsSnapshot.data?.docs ?? [];
+                      print('DEBUG: Found ${submissions.length} submissions for quiz $quizId');
+                      final submissionMap = <String, Map<String, dynamic>>{};
+                      for (var sub in submissions) {
+                        final data = sub.data() as Map<String, dynamic>;
+                        final studentId = data['studentId'] as String?;
+                        if (studentId != null) {
+                          submissionMap[studentId] = data;
+                          print('DEBUG: Submission for student $studentId: score=${data['totalScore']}/${data['maxTotalScore']}');
+                        }
+                      }
+
+                    // Combine students with their submissions
+                    final List<Map<String, dynamic>> studentMarks = [];
+                    for (var studentDoc in students) {
+                      final studentData = studentDoc.data() as Map<String, dynamic>;
+                      final studentId = studentDoc.id;
+                      final studentName = studentData['displayName'] as String? ?? 'Unknown Student';
+                      final submission = submissionMap[studentId];
+
+                      studentMarks.add({
+                        'studentId': studentId,
+                        'studentName': studentName,
+                        'submission': submission,
+                        'totalScore': submission?['totalScore'] as int? ?? 0,
+                        'maxTotalScore': submission?['maxTotalScore'] as int? ?? 0,
+                        'hasSubmitted': submission != null,
+                      });
+                    }
+
+                    // Sort by score (highest first), then not submitted at end
+                    studentMarks.sort((a, b) {
+                      if (!a['hasSubmitted'] && !b['hasSubmitted']) return 0;
+                      if (!a['hasSubmitted']) return 1;
+                      if (!b['hasSubmitted']) return -1;
+                      final scoreA = a['totalScore'] as int;
+                      final scoreB = b['totalScore'] as int;
+                      return scoreB.compareTo(scoreA);
+                    });
+
+                    // Debug info
+                    print('DEBUG Quiz Marks: Quiz=$quizTitle, Class=$className, Students=${students.length}, Submissions=${submissions.length}, Marks=${studentMarks.length}');
+
+                    return Container(
+                      decoration: BoxDecoration(
+                        color: Theme.of(context).cardColor,
+                        borderRadius: BorderRadius.circular(12),
+                        border: Border.all(color: Colors.grey.shade300),
+                      ),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Padding(
+                            padding: const EdgeInsets.all(16),
+                            child: Row(
+                              children: [
+                                Container(
+                                  padding: const EdgeInsets.all(8),
+                                  decoration: BoxDecoration(
+                                    color: Colors.purple.shade50,
+                                    borderRadius: BorderRadius.circular(8),
+                                  ),
+                                  child: const Icon(Icons.quiz, color: Colors.purple, size: 24),
+                                ),
+                                const SizedBox(width: 12),
+                                Expanded(
+                                  child: Column(
+                                    crossAxisAlignment: CrossAxisAlignment.start,
+                                    children: [
+                                      Text(
+                                        quizTitle,
+                                        style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+                                      ),
+                                      Text(
+                                        className,
+                                        style: TextStyle(fontSize: 12, color: Colors.grey.shade600),
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                          const Divider(height: 1),
+                          SizedBox(
+                            height: 300,
+                            child: students.isEmpty
+                                ? const Center(
+                                    child: Padding(
+                                      padding: EdgeInsets.all(20),
+                                      child: Text('No students enrolled in this class', style: TextStyle(color: Colors.grey)),
+                                    ),
+                                  )
+                                : studentMarks.isEmpty
+                                    ? const Center(
+                                        child: Padding(
+                                          padding: EdgeInsets.all(20),
+                                          child: Text('No student marks to display', style: TextStyle(color: Colors.grey)),
+                                        ),
+                                      )
+                                : SingleChildScrollView(
+                                    child: Table(
+                                      columnWidths: const {
+                                        0: FlexColumnWidth(2),
+                                        1: FlexColumnWidth(1),
+                                      },
+                                      children: [
+                                        // Header
+                                        TableRow(
+                                          decoration: BoxDecoration(color: Colors.grey.shade100),
+                                          children: const [
+                                            Padding(
+                                              padding: EdgeInsets.all(12),
+                                              child: Text('Student Name', style: TextStyle(fontWeight: FontWeight.bold)),
+                                            ),
+                                            Padding(
+                                              padding: const EdgeInsets.all(12),
+                                              child: Center(
+                                                child: Text('Score', style: const TextStyle(fontWeight: FontWeight.bold)),
+                                              ),
+                                            ),
+                                          ],
+                                        ),
+                                        // Rows
+                                        ...studentMarks.map((mark) {
+                                          final hasSubmitted = mark['hasSubmitted'] as bool;
+                                          final totalScore = mark['totalScore'] as int;
+                                          final maxScore = mark['maxTotalScore'] as int;
+                                          final scoreText = hasSubmitted
+                                              ? '$totalScore / $maxScore'
+                                              : 'Not submitted';
+                                          final scoreColor = hasSubmitted
+                                              ? (totalScore >= maxScore * 0.8
+                                                  ? Colors.green
+                                                  : totalScore >= maxScore * 0.5
+                                                      ? Colors.orange
+                                                      : Colors.red)
+                                              : Colors.grey;
+
+                                          return TableRow(
+                                            children: [
+                                              Padding(
+                                                padding: const EdgeInsets.all(12),
+                                                child: Text(mark['studentName'] as String),
+                                              ),
+                                              Padding(
+                                                padding: const EdgeInsets.all(12),
+                                                child: Center(
+                                                  child: Text(
+                                                    scoreText,
+                                                    style: TextStyle(color: scoreColor, fontWeight: FontWeight.w500),
+                                                  ),
+                                                ),
+                                              ),
+                                            ],
+                                          );
+                                        }).toList(),
+                                      ],
+                                    ),
+                                  ),
+                          ),
+                        ],
+                      ),
+                    );
+                  },
+                );
+              },
+            );
+          },
+        );
+      },
+    );
   }
 
   Widget _buildActivityItem(Map<String, dynamic> activity, {bool isLast = false}) {

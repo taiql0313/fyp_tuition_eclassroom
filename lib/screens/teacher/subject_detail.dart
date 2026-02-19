@@ -76,7 +76,76 @@ class _SubjectDetailPageState extends State<SubjectDetailPage> {
 
   bool get _isTeacher => _userRole == 'teacher';
 
-  // Delete classroom and unenroll all students
+  // Archive/Unarchive classroom
+  Future<void> _archiveClassroom(bool archive) async {
+    final action = archive ? 'archive' : 'unarchive';
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: Text(archive ? 'Archive Classroom' : 'Unarchive Classroom'),
+        content: Text(
+          archive
+              ? 'Are you sure you want to archive this classroom?\n\n'
+                  'This will:\n'
+                  '• Hide the classroom from students\n'
+                  '• Keep all data (assignments, quizzes, etc.)\n'
+                  '• You can still view and manage it\n'
+                  '• You can unarchive it anytime'
+              : 'Are you sure you want to unarchive this classroom?\n\n'
+                  'This will make it visible to students again.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('Cancel'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(context, true),
+            style: TextButton.styleFrom(foregroundColor: archive ? Colors.orange : Colors.green),
+            child: Text(archive ? 'Archive' : 'Unarchive'),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmed != true) return;
+
+    try {
+      await FirebaseFirestore.instance
+          .collection('classrooms')
+          .doc(widget.classId)
+          .update({
+        'isArchived': archive,
+        'archivedAt': archive ? FieldValue.serverTimestamp() : FieldValue.delete(),
+      });
+
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Classroom ${archive ? 'archived' : 'unarchived'} successfully'),
+            backgroundColor: archive ? Colors.orange : Colors.green,
+          ),
+        );
+        // Update local data
+        setState(() {
+          widget.classData['isArchived'] = archive;
+        });
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Error: $e'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    }
+  }
+
+  // Delete classroom function removed - classrooms cannot be deleted (similar to Google Classroom)
+  // This function is kept commented for reference only
+  /*
   Future<void> _deleteClassroom() async {
     final confirmed = await showDialog<bool>(
       context: context,
@@ -253,6 +322,7 @@ class _SubjectDetailPageState extends State<SubjectDetailPage> {
       }
     }
   }
+  */
 
   @override
   Widget build(BuildContext context) {
@@ -263,31 +333,65 @@ class _SubjectDetailPageState extends State<SubjectDetailPage> {
           elevation: 0,
           iconTheme: const IconThemeData(color: Colors.black),
           // Shows the specific Subject Name automatically
-          title: Text(
-            widget.classData['className'] ?? 'Classroom',
-            style: const TextStyle(color: Colors.black, fontWeight: FontWeight.bold),
+          title: Row(
+            children: [
+              Expanded(
+                child: Text(
+                  widget.classData['className'] ?? 'Classroom',
+                  style: const TextStyle(color: Colors.black, fontWeight: FontWeight.bold),
+                ),
+              ),
+              if (widget.classData['isArchived'] == true)
+                Container(
+                  margin: const EdgeInsets.only(left: 8),
+                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                  decoration: BoxDecoration(
+                    color: Colors.orange,
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  child: const Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Icon(Icons.archive, color: Colors.white, size: 14),
+                      SizedBox(width: 4),
+                      Text('Archived', style: TextStyle(color: Colors.white, fontSize: 12, fontWeight: FontWeight.bold)),
+                    ],
+                  ),
+                ),
+            ],
           ),
           actions: [
             if (_isTeacher)
               PopupMenuButton<String>(
                 icon: const Icon(Icons.more_vert, color: Colors.black),
                 onSelected: (value) {
-                  if (value == 'delete') {
-                    _deleteClassroom();
+                  if (value == 'archive') {
+                    _archiveClassroom(true);
+                  } else if (value == 'unarchive') {
+                    _archiveClassroom(false);
                   }
                 },
-                itemBuilder: (context) => [
-                  const PopupMenuItem(
-                    value: 'delete',
-                    child: Row(
-                      children: [
-                        Icon(Icons.delete, color: Colors.red),
-                        SizedBox(width: 8),
-                        Text('Delete Classroom', style: TextStyle(color: Colors.red)),
-                      ],
+                itemBuilder: (context) {
+                  final isArchived = widget.classData['isArchived'] == true;
+                  return [
+                    PopupMenuItem(
+                      value: isArchived ? 'unarchive' : 'archive',
+                      child: Row(
+                        children: [
+                          Icon(
+                            isArchived ? Icons.unarchive : Icons.archive,
+                            color: isArchived ? Colors.green : Colors.orange,
+                          ),
+                          const SizedBox(width: 8),
+                          Text(
+                            isArchived ? 'Unarchive Classroom' : 'Archive Classroom',
+                            style: TextStyle(color: isArchived ? Colors.green : Colors.orange),
+                          ),
+                        ],
+                      ),
                     ),
-                  ),
-                ],
+                  ];
+                },
               ),
           ],
           bottom: const TabBar(

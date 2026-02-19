@@ -55,6 +55,16 @@ class _JoinClassroomPageState extends State<JoinClassroomPage> {
       final classroomData = classroomDoc.data();
       final classroomId = classroomDoc.id;
 
+      // Check if classroom is archived - students cannot join archived classes
+      if (classroomData['isArchived'] == true) {
+        setState(() {
+          _errorMessage = "This classroom has been archived and is no longer accepting new students.";
+          _foundClassroom = null;
+          _isLoading = false;
+        });
+        return;
+      }
+
       // Check if student is already enrolled
       final user = _auth.currentUser;
       if (user != null) {

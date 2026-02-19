@@ -237,10 +237,19 @@ class _CreateAssignmentPageState extends State<CreateAssignmentPage> {
         actions: [
           _isLoading
               ? const Center(child: Padding(padding: EdgeInsets.symmetric(horizontal: 16), child: CircularProgressIndicator(strokeWidth: 2)))
-              : TextButton(
-            onPressed: _uploadAssignment,
-            child: const Text("Assign", style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
-          ),
+              : Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 8),
+                  child: ElevatedButton.icon(
+                    onPressed: _uploadAssignment,
+                    icon: const Icon(Icons.assignment, size: 18),
+                    label: const Text("Assign", style: TextStyle(fontWeight: FontWeight.bold)),
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: Colors.blue,
+                      foregroundColor: Colors.white,
+                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                    ),
+                  ),
+                ),
         ],
       ),
       body: SingleChildScrollView(
@@ -355,6 +364,41 @@ class _CreateAssignmentPageState extends State<CreateAssignmentPage> {
               style: TextStyle(fontSize: 12, color: Colors.grey.shade600),
             ),
           ),
+          const SizedBox(height: 32),
+          // Prominent Assign button at the bottom
+          SizedBox(
+            width: double.infinity,
+            height: 50,
+            child: ElevatedButton.icon(
+              onPressed: _isLoading ? null : _uploadAssignment,
+              icon: _isLoading
+                  ? const SizedBox(
+                      width: 20,
+                      height: 20,
+                      child: CircularProgressIndicator(
+                        color: Colors.white,
+                        strokeWidth: 2,
+                      ),
+                    )
+                  : const Icon(Icons.assignment, color: Colors.white),
+              label: Text(
+                _isLoading ? 'Creating...' : 'Assign',
+                style: const TextStyle(
+                  fontSize: 16,
+                  fontWeight: FontWeight.bold,
+                  color: Colors.white,
+                ),
+              ),
+              style: ElevatedButton.styleFrom(
+                backgroundColor: Colors.blue,
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                elevation: 2,
+              ),
+            ),
+          ),
+          const SizedBox(height: 16),
           ],
         ),
       ),
