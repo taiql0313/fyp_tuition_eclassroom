@@ -6,6 +6,7 @@ import 'package:fyp_tuition_eclassroom/services/attendance_service.dart';
 import 'package:fyp_tuition_eclassroom/models/attendance_models.dart';
 import 'package:fyp_tuition_eclassroom/utils/timezone_helper.dart';
 import 'package:intl/intl.dart';
+import 'package:qr_flutter/qr_flutter.dart';
 
 class CreateAttendanceCodePage extends StatefulWidget {
   const CreateAttendanceCodePage({super.key});
@@ -766,7 +767,86 @@ class _CreateAttendanceCodePageState extends State<CreateAttendanceCodePage> {
     );
   }
 
-  // Widget to display when a code is active
+  void _showQrCodeDialog(BuildContext context, String code, String subject, String className) {
+    showDialog(
+      context: context,
+      builder: (ctx) => Dialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+        child: Padding(
+          padding: const EdgeInsets.all(24),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const Text(
+                "Scan to Check In",
+                style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
+              ),
+              const SizedBox(height: 4),
+              Text(
+                "$subject - $className",
+                style: TextStyle(fontSize: 14, color: Colors.grey[600]),
+              ),
+              const SizedBox(height: 20),
+              Container(
+                padding: const EdgeInsets.all(16),
+                decoration: BoxDecoration(
+                  color: Colors.white,
+                  borderRadius: BorderRadius.circular(16),
+                  border: Border.all(color: const Color(0xff1458a3), width: 2),
+                ),
+                child: QrImageView(
+                  data: 'ATTENDANCE:$code',
+                  version: QrVersions.auto,
+                  size: 220,
+                  eyeStyle: const QrEyeStyle(
+                    eyeShape: QrEyeShape.square,
+                    color: Colors.black,
+                  ),
+                  dataModuleStyle: const QrDataModuleStyle(
+                    dataModuleShape: QrDataModuleShape.square,
+                    color: Colors.black,
+                  ),
+                  backgroundColor: Colors.white,
+                ),
+              ),
+              const SizedBox(height: 16),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
+                decoration: BoxDecoration(
+                  color: Colors.grey.shade100,
+                  borderRadius: BorderRadius.circular(10),
+                ),
+                child: Text(
+                  code,
+                  style: const TextStyle(
+                    fontSize: 28,
+                    fontWeight: FontWeight.w900,
+                    letterSpacing: 8,
+                    color: Color(0xff1458a3),
+                  ),
+                ),
+              ),
+              const SizedBox(height: 8),
+              Text(
+                "Students can scan the QR code or enter the code manually",
+                textAlign: TextAlign.center,
+                style: TextStyle(fontSize: 12, color: Colors.grey[600]),
+              ),
+              const SizedBox(height: 16),
+              SizedBox(
+                width: double.infinity,
+                child: TextButton(
+                  onPressed: () => Navigator.pop(ctx),
+                  child: const Text("Close"),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
   Widget _buildActiveCodeView(
     AttendanceSession session,
     Map<String, dynamic> classData,
@@ -801,10 +881,29 @@ class _CreateAttendanceCodePageState extends State<CreateAttendanceCodePage> {
         ),
         const SizedBox(height: 8),
         const Text(
-          "Share this code with your students to check in.",
+          "Share this code or QR with your students to check in.",
           style: TextStyle(fontSize: 12, color: Colors.grey),
         ),
-        const SizedBox(height: 16),
+        const SizedBox(height: 12),
+        SizedBox(
+          width: double.infinity,
+          child: OutlinedButton.icon(
+            onPressed: () => _showQrCodeDialog(
+              context,
+              session.code,
+              classData['subject'] ?? 'Subject',
+              classData['className'] ?? 'Class',
+            ),
+            icon: const Icon(Icons.qr_code_2, size: 20),
+            label: const Text("Show QR Code"),
+            style: OutlinedButton.styleFrom(
+              foregroundColor: const Color(0xff1458a3),
+              padding: const EdgeInsets.symmetric(vertical: 12),
+              side: const BorderSide(color: Color(0xff1458a3)),
+            ),
+          ),
+        ),
+        const SizedBox(height: 12),
         Row(
           children: [
             Expanded(

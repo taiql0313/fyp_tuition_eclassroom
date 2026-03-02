@@ -4,6 +4,7 @@ import 'package:fyp_tuition_eclassroom/utils/timezone_helper.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:fyp_tuition_eclassroom/services/payment_service.dart';
+import 'package:fyp_tuition_eclassroom/services/email_service.dart';
 import 'package:fyp_tuition_eclassroom/models/payment_models.dart';
 import 'payment_history_page.dart';
 import 'paypal_webview_page.dart';
@@ -28,6 +29,20 @@ class _PaymentPageState extends State<PaymentPage> {
     _loadPaymentData();
     // Check for reminders when page loads
     _paymentService.checkAndSendReminders();
+  }
+
+  Future<void> _sendReceiptEmail(String orderId) async {
+    try {
+      final user = _auth.currentUser;
+      if (user == null) return;
+
+      final txQuery = await _paymentService.getTransactionByOrderId(orderId, user.uid);
+      if (txQuery != null) {
+        await EmailService.sendReceiptForTransaction(txQuery);
+      }
+    } catch (e) {
+      print('Failed to send receipt email: $e');
+    }
   }
 
   Future<void> _loadPaymentData() async {
@@ -152,10 +167,14 @@ class _PaymentPageState extends State<PaymentPage> {
 
           ScaffoldMessenger.of(context).showSnackBar(
             const SnackBar(
-              content: Text("Payment completed successfully!"),
+              content: Text("Payment completed successfully! Receipt sent to your email."),
               backgroundColor: Colors.green,
+              duration: Duration(seconds: 4),
             ),
           );
+
+          // Send receipt email in background (non-blocking)
+          _sendReceiptEmail(orderId);
 
           _loadPaymentData();
         } catch (e) {

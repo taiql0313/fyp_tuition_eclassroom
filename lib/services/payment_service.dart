@@ -763,6 +763,18 @@ class PaymentService {
     }
   }
 
+  /// Get a completed transaction by PayPal order ID and student ID
+  Future<PaymentTransaction?> getTransactionByOrderId(String orderId, String studentId) async {
+    final query = await _db
+        .collection(_transactionsCol)
+        .where('paypalOrderId', isEqualTo: orderId)
+        .where('studentId', isEqualTo: studentId)
+        .limit(1)
+        .get();
+    if (query.docs.isEmpty) return null;
+    return PaymentTransaction.fromMap(query.docs.first.id, query.docs.first.data());
+  }
+
   /// Complete PayPal payment (verify and update invoice) - Legacy method
   Future<void> completePayPalPayment({
     required String transactionId,

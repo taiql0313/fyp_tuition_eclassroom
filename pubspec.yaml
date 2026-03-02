@@ -43,10 +43,11 @@ dependencies:
   path_provider: ^2.1.1
   shared_preferences: ^2.2.2
   open_file: ^3.5.0
+  share_plus: ^10.1.4
+  mailer: ^6.2.0
   webview_flutter: ^4.8.0
-  # path_provider: ^2.1.1
-  # qr_flutter: ^4.1.0
-  # qr_code_scanner: ^4.0.1
+  qr_flutter: ^4.1.0
+  mobile_scanner: ^6.0.2
 
 
 dev_dependencies:

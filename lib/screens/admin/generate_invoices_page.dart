@@ -1,3 +1,4 @@
+import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:intl/intl.dart';
@@ -5,6 +6,11 @@ import 'package:fyp_tuition_eclassroom/services/payment_service.dart';
 import 'package:fyp_tuition_eclassroom/services/user_service.dart';
 import 'package:fyp_tuition_eclassroom/models/user_model.dart';
 import 'package:fyp_tuition_eclassroom/models/payment_models.dart';
+import 'package:pdf/pdf.dart';
+import 'package:pdf/widgets.dart' as pw;
+import 'package:printing/printing.dart';
+import 'package:path_provider/path_provider.dart';
+import 'package:share_plus/share_plus.dart';
 
 class GenerateInvoicesPage extends StatefulWidget {
   const GenerateInvoicesPage({super.key});
@@ -290,6 +296,311 @@ class _GenerateInvoicesPageState extends State<GenerateInvoicesPage> {
     }
   }
 
+  pw.Widget _buildInvoicePageContent(
+    String studentName,
+    String studentEmail,
+    List<InvoiceItem> items,
+    double totalAmount,
+  ) {
+    return pw.Column(
+      crossAxisAlignment: pw.CrossAxisAlignment.start,
+      children: [
+        pw.Container(
+          width: double.infinity,
+          padding: const pw.EdgeInsets.all(20),
+          decoration: const pw.BoxDecoration(
+            color: PdfColor.fromInt(0xff1458a3),
+            borderRadius: pw.BorderRadius.all(pw.Radius.circular(8)),
+          ),
+          child: pw.Row(
+            mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
+            children: [
+              pw.Column(
+                crossAxisAlignment: pw.CrossAxisAlignment.start,
+                children: [
+                  pw.Text(
+                    'TUITION INVOICE',
+                    style: pw.TextStyle(fontSize: 22, fontWeight: pw.FontWeight.bold, color: PdfColors.white),
+                  ),
+                  pw.SizedBox(height: 4),
+                  pw.Text('Tuition E-Classroom', style: const pw.TextStyle(fontSize: 12, color: PdfColors.white)),
+                ],
+              ),
+              pw.Column(
+                crossAxisAlignment: pw.CrossAxisAlignment.end,
+                children: [
+                  pw.Text('PREVIEW', style: pw.TextStyle(fontSize: 16, fontWeight: pw.FontWeight.bold, color: PdfColors.yellow)),
+                  pw.SizedBox(height: 4),
+                  pw.Text(
+                    DateFormat('MMMM yyyy').format(_selectedMonth),
+                    style: const pw.TextStyle(fontSize: 12, color: PdfColors.white),
+                  ),
+                ],
+              ),
+            ],
+          ),
+        ),
+        pw.SizedBox(height: 24),
+
+        pw.Row(
+          mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
+          children: [
+            pw.Column(
+              crossAxisAlignment: pw.CrossAxisAlignment.start,
+              children: [
+                pw.Text('Bill To:', style: pw.TextStyle(fontSize: 10, color: PdfColors.grey700)),
+                pw.SizedBox(height: 4),
+                pw.Text(studentName, style: pw.TextStyle(fontSize: 14, fontWeight: pw.FontWeight.bold)),
+                if (studentEmail.isNotEmpty)
+                  pw.Text(studentEmail, style: const pw.TextStyle(fontSize: 11)),
+              ],
+            ),
+            pw.Column(
+              crossAxisAlignment: pw.CrossAxisAlignment.end,
+              children: [
+                pw.Text('Invoice Month:', style: pw.TextStyle(fontSize: 10, color: PdfColors.grey700)),
+                pw.SizedBox(height: 4),
+                pw.Text(
+                  DateFormat('MMMM yyyy').format(_selectedMonth),
+                  style: pw.TextStyle(fontSize: 14, fontWeight: pw.FontWeight.bold),
+                ),
+                pw.Text(
+                  'Due: ${DateFormat('dd MMM yyyy').format(DateTime(_selectedMonth.year, _selectedMonth.month + 1, 0))}',
+                  style: const pw.TextStyle(fontSize: 11),
+                ),
+              ],
+            ),
+          ],
+        ),
+        pw.SizedBox(height: 24),
+
+        pw.Table(
+          border: pw.TableBorder.all(color: PdfColors.grey300, width: 0.5),
+          columnWidths: {
+            0: const pw.FlexColumnWidth(1),
+            1: const pw.FlexColumnWidth(3),
+            2: const pw.FlexColumnWidth(1.5),
+          },
+          children: [
+            pw.TableRow(
+              decoration: const pw.BoxDecoration(color: PdfColor.fromInt(0xffe3f2fd)),
+              children: [
+                pw.Padding(
+                  padding: const pw.EdgeInsets.all(8),
+                  child: pw.Text('#', style: pw.TextStyle(fontWeight: pw.FontWeight.bold, fontSize: 11)),
+                ),
+                pw.Padding(
+                  padding: const pw.EdgeInsets.all(8),
+                  child: pw.Text('Subject / Class', style: pw.TextStyle(fontWeight: pw.FontWeight.bold, fontSize: 11)),
+                ),
+                pw.Padding(
+                  padding: const pw.EdgeInsets.all(8),
+                  child: pw.Text('Amount (RM)', style: pw.TextStyle(fontWeight: pw.FontWeight.bold, fontSize: 11), textAlign: pw.TextAlign.right),
+                ),
+              ],
+            ),
+            ...items.asMap().entries.map((entry) => pw.TableRow(
+                  children: [
+                    pw.Padding(
+                      padding: const pw.EdgeInsets.all(8),
+                      child: pw.Text('${entry.key + 1}', style: const pw.TextStyle(fontSize: 11)),
+                    ),
+                    pw.Padding(
+                      padding: const pw.EdgeInsets.all(8),
+                      child: pw.Text('${entry.value.subjectName}\n${entry.value.className}', style: const pw.TextStyle(fontSize: 11)),
+                    ),
+                    pw.Padding(
+                      padding: const pw.EdgeInsets.all(8),
+                      child: pw.Text(entry.value.price.toStringAsFixed(2), style: const pw.TextStyle(fontSize: 11), textAlign: pw.TextAlign.right),
+                    ),
+                  ],
+                )),
+            pw.TableRow(
+              decoration: const pw.BoxDecoration(color: PdfColor.fromInt(0xfff5f5f5)),
+              children: [
+                pw.Padding(padding: const pw.EdgeInsets.all(8), child: pw.Text('')),
+                pw.Padding(
+                  padding: const pw.EdgeInsets.all(8),
+                  child: pw.Text('Total', style: pw.TextStyle(fontWeight: pw.FontWeight.bold, fontSize: 13)),
+                ),
+                pw.Padding(
+                  padding: const pw.EdgeInsets.all(8),
+                  child: pw.Text(
+                    totalAmount.toStringAsFixed(2),
+                    style: pw.TextStyle(fontWeight: pw.FontWeight.bold, fontSize: 13),
+                    textAlign: pw.TextAlign.right,
+                  ),
+                ),
+              ],
+            ),
+          ],
+        ),
+        pw.SizedBox(height: 30),
+
+        pw.Divider(),
+        pw.SizedBox(height: 10),
+        pw.Center(
+          child: pw.Text(
+            'Please make payment before the due date.',
+            style: pw.TextStyle(fontSize: 11, fontStyle: pw.FontStyle.italic, color: PdfColors.grey700),
+          ),
+        ),
+      ],
+    );
+  }
+
+  pw.Document _buildInvoicePdfForStudent(String studentId) {
+    final preview = _previewData[studentId]!;
+    final items = preview['items'] as List<InvoiceItem>;
+    final totalAmount = preview['totalAmount'] as double;
+    final studentName = preview['studentName'] as String;
+    final studentEmail = preview['studentEmail'] as String? ?? '';
+
+    final pdf = pw.Document();
+    final content = _buildInvoicePageContent(studentName, studentEmail, items, totalAmount);
+    pdf.addPage(
+      pw.Page(
+        pageFormat: PdfPageFormat.a4,
+        build: (pw.Context ctx) => content,
+      ),
+    );
+    return pdf;
+  }
+
+  Future<void> _previewInvoicePdf(String studentId) async {
+    try {
+      final pdf = _buildInvoicePdfForStudent(studentId);
+      final bytes = await pdf.save();
+      await Printing.layoutPdf(onLayout: (_) async => bytes);
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Error previewing invoice: $e'), backgroundColor: Colors.red),
+      );
+    }
+  }
+
+  Future<void> _shareInvoicePdf(String studentId) async {
+    try {
+      final preview = _previewData[studentId]!;
+      final studentName = preview['studentName'] as String;
+      final pdf = _buildInvoicePdfForStudent(studentId);
+      final bytes = await pdf.save();
+
+      final dir = await getTemporaryDirectory();
+      final fileName = 'Invoice_${studentName.replaceAll(' ', '_')}_${DateFormat('MMyyyy').format(_selectedMonth)}.pdf';
+      final file = File('${dir.path}/$fileName');
+      await file.writeAsBytes(bytes);
+
+      await Share.shareXFiles(
+        [XFile(file.path)],
+        text: 'Invoice for $studentName - ${DateFormat('MMMM yyyy').format(_selectedMonth)}',
+        subject: 'Tuition Invoice',
+      );
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Error sharing invoice: $e'), backgroundColor: Colors.red),
+      );
+    }
+  }
+
+  Future<void> _previewAllSelectedPdf() async {
+    if (_selectedStudentIds.isEmpty) return;
+
+    try {
+      final combinedPdf = pw.Document();
+      for (var studentId in _selectedStudentIds) {
+        final preview = _previewData[studentId]!;
+        final items = preview['items'] as List<InvoiceItem>;
+        final totalAmount = preview['totalAmount'] as double;
+        final studentName = preview['studentName'] as String;
+        final studentEmail = preview['studentEmail'] as String? ?? '';
+
+        final content = _buildInvoicePageContent(studentName, studentEmail, items, totalAmount);
+        combinedPdf.addPage(
+          pw.Page(
+            pageFormat: PdfPageFormat.a4,
+            build: (pw.Context ctx) => content,
+          ),
+        );
+      }
+      final bytes = await combinedPdf.save();
+      await Printing.layoutPdf(onLayout: (_) async => bytes);
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Error previewing invoices: $e'), backgroundColor: Colors.red),
+      );
+    }
+  }
+
+  Future<void> _shareAllSelectedPdf() async {
+    if (_selectedStudentIds.isEmpty) return;
+
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (_) => const Center(
+        child: Card(
+          child: Padding(
+            padding: EdgeInsets.all(24),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                CircularProgressIndicator(),
+                SizedBox(height: 16),
+                Text("Generating invoices..."),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+
+    try {
+      final dir = await getTemporaryDirectory();
+
+      // Build one combined PDF with all selected students
+      final combinedPdf = pw.Document();
+      for (var studentId in _selectedStudentIds) {
+        final preview = _previewData[studentId]!;
+        final items = preview['items'] as List<InvoiceItem>;
+        final totalAmount = preview['totalAmount'] as double;
+        final studentName = preview['studentName'] as String;
+        final studentEmail = preview['studentEmail'] as String? ?? '';
+
+        final content = _buildInvoicePageContent(studentName, studentEmail, items, totalAmount);
+        combinedPdf.addPage(
+          pw.Page(
+            pageFormat: PdfPageFormat.a4,
+            build: (pw.Context ctx) => content,
+          ),
+        );
+      }
+
+      final bytes = await combinedPdf.save();
+      final fileName = 'Invoices_${DateFormat('MMyyyy').format(_selectedMonth)}.pdf';
+      final file = File('${dir.path}/$fileName');
+      await file.writeAsBytes(bytes);
+
+      if (!mounted) return;
+      Navigator.pop(context); // dismiss loading
+
+      await Share.shareXFiles(
+        [XFile(file.path)],
+        text: 'Tuition Invoices for ${DateFormat('MMMM yyyy').format(_selectedMonth)} (${_selectedStudentIds.length} students)',
+        subject: 'Tuition Invoices',
+      );
+    } catch (e) {
+      if (!mounted) return;
+      Navigator.pop(context); // dismiss loading
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Error sharing invoices: $e'), backgroundColor: Colors.red),
+      );
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final eligibleCount =
@@ -369,17 +680,51 @@ class _GenerateInvoicesPageState extends State<GenerateInvoicesPage> {
             Container(
               padding: const EdgeInsets.all(16),
               color: Colors.blue.shade50,
-              child: Row(
+              child: Column(
                 children: [
-                  Icon(Icons.info_outline, color: Colors.blue[700]),
-                  const SizedBox(width: 8),
-                  Expanded(
-                    child: Text(
-                      "${_previewData.length} student(s) found. "
-                      "$eligibleCount eligible for new charges • ${_selectedStudentIds.length} selected.",
-                      style: TextStyle(color: Colors.blue[900], fontSize: 14),
-                    ),
+                  Row(
+                    children: [
+                      Icon(Icons.info_outline, color: Colors.blue[700]),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: Text(
+                          "${_previewData.length} student(s) found. "
+                          "$eligibleCount eligible for new charges • ${_selectedStudentIds.length} selected.",
+                          style: TextStyle(color: Colors.blue[900], fontSize: 14),
+                        ),
+                      ),
+                    ],
                   ),
+                  if (_selectedStudentIds.isNotEmpty) ...[
+                    const SizedBox(height: 8),
+                    Row(
+                      children: [
+                        Expanded(
+                          child: OutlinedButton.icon(
+                            onPressed: _previewAllSelectedPdf,
+                            icon: const Icon(Icons.picture_as_pdf, size: 18),
+                            label: Text("Preview All (${_selectedStudentIds.length})"),
+                            style: OutlinedButton.styleFrom(
+                              foregroundColor: const Color(0xff1458a3),
+                              backgroundColor: Colors.white,
+                            ),
+                          ),
+                        ),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: OutlinedButton.icon(
+                            onPressed: _shareAllSelectedPdf,
+                            icon: const Icon(Icons.share, size: 18),
+                            label: Text("Share All (${_selectedStudentIds.length})"),
+                            style: OutlinedButton.styleFrom(
+                              foregroundColor: Colors.green,
+                              backgroundColor: Colors.white,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ],
                 ],
               ),
             ),
@@ -547,6 +892,34 @@ class _GenerateInvoicesPageState extends State<GenerateInvoicesPage> {
                                       ),
                                     ],
                                   ),
+                                  if (canGenerate) ...[
+                                    const SizedBox(height: 12),
+                                    Row(
+                                      children: [
+                                        Expanded(
+                                          child: OutlinedButton.icon(
+                                            onPressed: () => _previewInvoicePdf(studentId),
+                                            icon: const Icon(Icons.preview, size: 18),
+                                            label: const Text("Preview PDF"),
+                                            style: OutlinedButton.styleFrom(
+                                              foregroundColor: const Color(0xff1458a3),
+                                            ),
+                                          ),
+                                        ),
+                                        const SizedBox(width: 8),
+                                        Expanded(
+                                          child: OutlinedButton.icon(
+                                            onPressed: () => _shareInvoicePdf(studentId),
+                                            icon: const Icon(Icons.share, size: 18),
+                                            label: const Text("Share"),
+                                            style: OutlinedButton.styleFrom(
+                                              foregroundColor: Colors.green,
+                                            ),
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                  ],
                                 ],
                               ),
                             ),
