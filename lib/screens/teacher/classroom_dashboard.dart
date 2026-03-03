@@ -55,13 +55,25 @@ class ClassroomDashboard extends StatelessWidget {
             builder: (context, snapshot) {
               // Filter active classes (isArchived != true or null)
               int classCount = 0;
+              final classIds = <String>[];
+
               if (snapshot.hasData) {
-                classCount = snapshot.data!.docs.where((doc) {
+                for (final doc in snapshot.data!.docs) {
                   final data = doc.data() as Map<String, dynamic>;
-                  return data['isArchived'] != true; // true means archived, false or null means active
-                }).length;
+                  if (data['isArchived'] != true) {
+                    classCount++;
+                    classIds.add(doc.id);
+                  }
+                }
               }
-              return _buildHeader(classCount.toString(), "0", "0%");
+
+              return FutureBuilder<int>(
+                future: _calculatePendingTasks(uid, classIds),
+                builder: (context, taskSnapshot) {
+                  final pendingCount = taskSnapshot.data ?? 0;
+                  return _buildHeader(classCount.toString(), pendingCount.toString());
+                },
+              );
             },
           ),
           Padding(
@@ -239,7 +251,7 @@ class ClassroomDashboard extends StatelessWidget {
   }
 
   // --- UPDATED HEADER (Removed Name, Added Real Count) ---
-  Widget _buildHeader(String classCount, String tasks, String attendance) {
+  Widget _buildHeader(String classCount, String tasks) {
     return Container(
       width: double.infinity,
       padding: const EdgeInsets.symmetric(vertical: 30, horizontal: 25),
@@ -255,7 +267,6 @@ class ClassroomDashboard extends StatelessWidget {
         children: [
           _buildStatItem(classCount, "Classes"),
           _buildStatItem(tasks, "Pending Tasks"),
-          _buildStatItem(attendance, "Attendance"),
         ],
       ),
     );
@@ -268,6 +279,47 @@ class ClassroomDashboard extends StatelessWidget {
         Text(label, style: const TextStyle(color: Colors.white70, fontSize: 14)),
       ],
     );
+  }
+
+  /// Calculate number of pending assignments for this teacher:
+  /// total assignments in their active classes minus those that have at least one submission.
+  Future<int> _calculatePendingTasks(String teacherId, List<String> classIds) async {
+    try {
+      if (classIds.isEmpty) return 0;
+
+      int totalAssignments = 0;
+      int assignmentsWithSubmissions = 0;
+
+      // Firestore whereIn limit is 10
+      for (var i = 0; i < classIds.length; i += 10) {
+        final batch = classIds.skip(i).take(10).toList();
+
+        final assignmentsSnapshot = await FirebaseFirestore.instance
+            .collection('assignments')
+            .where('classId', whereIn: batch)
+            .get();
+
+        for (var assignment in assignmentsSnapshot.docs) {
+          totalAssignments++;
+
+          final submissionSnapshot = await FirebaseFirestore.instance
+              .collection('assignment_submissions')
+              .where('assignmentId', isEqualTo: assignment.id)
+              .limit(1)
+              .get();
+
+          if (submissionSnapshot.docs.isNotEmpty) {
+            assignmentsWithSubmissions++;
+          }
+        }
+      }
+
+      final pending = totalAssignments - assignmentsWithSubmissions;
+      return pending < 0 ? 0 : pending;
+    } catch (e) {
+      print('Error calculating teacher pending tasks: $e');
+      return 0;
+    }
   }
 
 

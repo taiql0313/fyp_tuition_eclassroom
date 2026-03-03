@@ -28,7 +28,7 @@ class StudentClassroomDashboard extends StatelessWidget {
               stream: FirebaseFirestore.instance.collection('users').doc(uid).snapshots(),
               builder: (context, userSnapshot) {
                 if (!userSnapshot.hasData) {
-                  return _buildHeader("0", "0", "0%");
+                  return _buildHeader("0", "0");
                 }
 
                 final userData = userSnapshot.data!.data() as Map<String, dynamic>?;
@@ -48,7 +48,14 @@ class StudentClassroomDashboard extends StatelessWidget {
                         return data['isArchived'] != true;
                       }).length;
                     }
-                    return _buildHeader(activeCount.toString(), "0", "0%");
+
+                    return FutureBuilder<int>(
+                      future: _calculatePendingTasks(uid, classIds),
+                      builder: (context, taskSnapshot) {
+                        final pendingCount = taskSnapshot.data ?? 0;
+                        return _buildHeader(activeCount.toString(), pendingCount.toString());
+                      },
+                    );
                   },
                 );
               },
@@ -177,7 +184,7 @@ class StudentClassroomDashboard extends StatelessWidget {
   }
 
   // --- HEADER ---
-  Widget _buildHeader(String classCount, String tasks, String attendance) {
+  Widget _buildHeader(String classCount, String tasks) {
     return Container(
       width: double.infinity,
       padding: const EdgeInsets.symmetric(vertical: 30, horizontal: 25),
@@ -193,7 +200,6 @@ class StudentClassroomDashboard extends StatelessWidget {
         children: [
           _buildStatItem(classCount, "Classes"),
           _buildStatItem(tasks, "Pending Tasks"),
-          _buildStatItem(attendance, "Attendance"),
         ],
       ),
     );
@@ -206,6 +212,46 @@ class StudentClassroomDashboard extends StatelessWidget {
         Text(label, style: const TextStyle(color: Colors.white70, fontSize: 14)),
       ],
     );
+  }
+
+  /// Calculate number of pending assignments (not yet submitted by this student)
+  Future<int> _calculatePendingTasks(String userId, List<String> classIds) async {
+    try {
+      if (classIds.isEmpty) return 0;
+
+      int totalAssignments = 0;
+      int submittedAssignments = 0;
+
+      // Firestore whereIn limit is 10
+      for (var i = 0; i < classIds.length; i += 10) {
+        final batch = classIds.skip(i).take(10).toList();
+
+        final assignmentsSnapshot = await FirebaseFirestore.instance
+            .collection('assignments')
+            .where('classId', whereIn: batch)
+            .get();
+
+        for (var assignment in assignmentsSnapshot.docs) {
+          totalAssignments++;
+
+          final submissionSnapshot = await FirebaseFirestore.instance
+              .collection('assignment_submissions')
+              .where('assignmentId', isEqualTo: assignment.id)
+              .where('studentId', isEqualTo: userId)
+              .get();
+
+          if (submissionSnapshot.docs.isNotEmpty) {
+            submittedAssignments++;
+          }
+        }
+      }
+
+      final pending = totalAssignments - submittedAssignments;
+      return pending < 0 ? 0 : pending;
+    } catch (e) {
+      print('Error calculating pending tasks: $e');
+      return 0;
+    }
   }
 
   // --- CLASS CARD (WITHOUT CLASS CODE) ---
