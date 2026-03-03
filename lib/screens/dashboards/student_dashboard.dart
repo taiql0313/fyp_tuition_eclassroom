@@ -60,7 +60,6 @@ class _StudentDashboardState extends State<StudentDashboard> {
                   }
                 },
                 itemBuilder: (context) => [
-                  const PopupMenuItem(value: 'profile', child: Text('Profile')),
                   const PopupMenuItem(value: 'settings', child: Text('Settings')),
                   const PopupMenuItem(
                     value: 'logout',
@@ -209,6 +208,10 @@ class _StudentDashboardState extends State<StudentDashboard> {
 
   // --- STAT CARDS DESIGN ---
   Widget _buildQuickStatsSection() {
+    final auth = context.read<AuthService>();
+    final user = auth.currentUser;
+    final userId = user?.uid ?? '';
+    
     final theme = Theme.of(context);
     final onSurface = theme.colorScheme.onSurface;
     return Column(
@@ -229,53 +232,224 @@ class _StudentDashboardState extends State<StudentDashboard> {
           mainAxisSpacing: 12,
           childAspectRatio: 1.1,
           children: [
-            _buildStatCard('Attendance', '92%', Icons.calendar_today_outlined, const Color(0xFF2E7D32), 0.92),
-            _buildStatCard('Assignments', '3 to-do', Icons.assignment_outlined, const Color(0xFF1565C0), 0.6),
+            _buildAttendanceCard(userId),
+            _buildAssignmentsCard(userId),
           ],
         ),
       ],
     );
   }
 
-  Widget _buildStatCard(String title, String value, IconData icon, Color color, double progress) {
+  Widget _buildAttendanceCard(String userId) {
     final theme = Theme.of(context);
-    return Container(
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: theme.cardTheme.color ?? theme.colorScheme.surface,
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: theme.dividerColor),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
+    const color = Color(0xFF2E7D32);
+
+    return FutureBuilder<Map<String, dynamic>>(
+      future: _calculateAttendanceStats(userId),
+      builder: (context, snapshot) {
+        final stats = snapshot.data ?? {'percentage': 0.0, 'present': 0, 'total': 0};
+        final percentage = stats['percentage'] as double;
+        final present = stats['present'] as int;
+        final total = stats['total'] as int;
+
+        return Container(
+          padding: const EdgeInsets.all(16),
+          decoration: BoxDecoration(
+            color: theme.cardTheme.color ?? theme.colorScheme.surface,
+            borderRadius: BorderRadius.circular(12),
+            border: Border.all(color: theme.dividerColor),
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Container(
-                padding: const EdgeInsets.all(8),
-                decoration: BoxDecoration(color: color.withOpacity(0.1), borderRadius: BorderRadius.circular(8)),
-                child: Icon(icon, size: 20, color: color),
+              Row(
+                children: [
+                  Container(
+                    padding: const EdgeInsets.all(8),
+                    decoration: BoxDecoration(color: color.withOpacity(0.1), borderRadius: BorderRadius.circular(8)),
+                    child: const Icon(Icons.calendar_today_outlined, size: 20, color: color),
+                  ),
+                  const Spacer(),
+                  Container(
+                    width: 40,
+                    height: 4,
+                    decoration: BoxDecoration(color: theme.dividerColor, borderRadius: BorderRadius.circular(2)),
+                    child: FractionallySizedBox(
+                      alignment: Alignment.centerLeft,
+                      widthFactor: percentage / 100,
+                      child: Container(decoration: BoxDecoration(color: color, borderRadius: BorderRadius.circular(2))),
+                    ),
+                  ),
+                ],
               ),
-              const Spacer(),
-              Container(
-                width: 40,
-                height: 4,
-                decoration: BoxDecoration(color: Theme.of(context).dividerColor, borderRadius: BorderRadius.circular(2)),
-                child: FractionallySizedBox(
-                  alignment: Alignment.centerLeft,
-                  widthFactor: progress,
-                  child: Container(decoration: BoxDecoration(color: color, borderRadius: BorderRadius.circular(2))),
-                ),
+              const SizedBox(height: 12),
+              Text(
+                '${percentage.toStringAsFixed(0)}%',
+                style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold, color: theme.colorScheme.onSurface),
+              ),
+              const SizedBox(height: 4),
+              Text(
+                'Attendance ($present/$total)',
+                style: TextStyle(color: Colors.grey.shade600, fontSize: 13),
               ),
             ],
           ),
-          const SizedBox(height: 12),
-          Text(value, style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold, color: Theme.of(context).colorScheme.onSurface)),
-          const SizedBox(height: 4),
-          Text(title, style: TextStyle(color: Colors.grey.shade600, fontSize: 13)),
-        ],
-      ),
+        );
+      },
     );
+  }
+
+  Future<Map<String, dynamic>> _calculateAttendanceStats(String userId) async {
+    try {
+      // Get student's enrolled classes
+      final userDoc = await FirebaseFirestore.instance.collection('users').doc(userId).get();
+      final classIds = List<String>.from(userDoc.data()?['classIds'] ?? []);
+
+      if (classIds.isEmpty) {
+        return {'percentage': 0.0, 'present': 0, 'total': 0};
+      }
+
+      // Get all attendance sessions for student's classes
+      int totalSessions = 0;
+      int attendedSessions = 0;
+
+      for (var classId in classIds) {
+        // Get sessions for this class
+        final sessionsSnapshot = await FirebaseFirestore.instance
+            .collection('attendance_sessions')
+            .where('classId', isEqualTo: classId)
+            .get();
+
+        for (var session in sessionsSnapshot.docs) {
+          totalSessions++;
+          
+          // Check if student attended this session
+          final recordSnapshot = await FirebaseFirestore.instance
+              .collection('attendance_records')
+              .where('sessionId', isEqualTo: session.id)
+              .where('studentId', isEqualTo: userId)
+              .get();
+
+          if (recordSnapshot.docs.isNotEmpty) {
+            attendedSessions++;
+          }
+        }
+      }
+
+      final percentage = totalSessions > 0 ? (attendedSessions / totalSessions) * 100 : 0.0;
+      return {'percentage': percentage, 'present': attendedSessions, 'total': totalSessions};
+    } catch (e) {
+      print('Error calculating attendance: $e');
+      return {'percentage': 0.0, 'present': 0, 'total': 0};
+    }
+  }
+
+  Widget _buildAssignmentsCard(String userId) {
+    final theme = Theme.of(context);
+    const color = Color(0xFF1565C0);
+
+    return FutureBuilder<Map<String, dynamic>>(
+      future: _calculateAssignmentStats(userId),
+      builder: (context, snapshot) {
+        final stats = snapshot.data ?? {'pending': 0, 'total': 0, 'progress': 0.0};
+        final pending = stats['pending'] as int;
+        final total = stats['total'] as int;
+        final progress = stats['progress'] as double;
+
+        return Container(
+          padding: const EdgeInsets.all(16),
+          decoration: BoxDecoration(
+            color: theme.cardTheme.color ?? theme.colorScheme.surface,
+            borderRadius: BorderRadius.circular(12),
+            border: Border.all(color: theme.dividerColor),
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                children: [
+                  Container(
+                    padding: const EdgeInsets.all(8),
+                    decoration: BoxDecoration(color: color.withOpacity(0.1), borderRadius: BorderRadius.circular(8)),
+                    child: const Icon(Icons.assignment_outlined, size: 20, color: color),
+                  ),
+                  const Spacer(),
+                  Container(
+                    width: 40,
+                    height: 4,
+                    decoration: BoxDecoration(color: theme.dividerColor, borderRadius: BorderRadius.circular(2)),
+                    child: FractionallySizedBox(
+                      alignment: Alignment.centerLeft,
+                      widthFactor: progress,
+                      child: Container(decoration: BoxDecoration(color: color, borderRadius: BorderRadius.circular(2))),
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 12),
+              Text(
+                pending > 0 ? '$pending to-do' : 'All done!',
+                style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold, color: theme.colorScheme.onSurface),
+              ),
+              const SizedBox(height: 4),
+              Text(
+                'Assignments (${total - pending}/$total)',
+                style: TextStyle(color: Colors.grey.shade600, fontSize: 13),
+              ),
+            ],
+          ),
+        );
+      },
+    );
+  }
+
+  Future<Map<String, dynamic>> _calculateAssignmentStats(String userId) async {
+    try {
+      // Get student's enrolled classes
+      final userDoc = await FirebaseFirestore.instance.collection('users').doc(userId).get();
+      final classIds = List<String>.from(userDoc.data()?['classIds'] ?? []);
+
+      if (classIds.isEmpty) {
+        return {'pending': 0, 'total': 0, 'progress': 0.0};
+      }
+
+      int totalAssignments = 0;
+      int submittedAssignments = 0;
+
+      // Firestore whereIn limit is 10
+      for (var i = 0; i < classIds.length; i += 10) {
+        final batch = classIds.skip(i).take(10).toList();
+        
+        // Get assignments for these classes
+        final assignmentsSnapshot = await FirebaseFirestore.instance
+            .collection('assignments')
+            .where('classId', whereIn: batch)
+            .get();
+
+        for (var assignment in assignmentsSnapshot.docs) {
+          totalAssignments++;
+          
+          // Check if student submitted this assignment
+          final submissionSnapshot = await FirebaseFirestore.instance
+              .collection('assignment_submissions')
+              .where('assignmentId', isEqualTo: assignment.id)
+              .where('studentId', isEqualTo: userId)
+              .get();
+
+          if (submissionSnapshot.docs.isNotEmpty) {
+            submittedAssignments++;
+          }
+        }
+      }
+
+      final pending = totalAssignments - submittedAssignments;
+      final progress = totalAssignments > 0 ? submittedAssignments / totalAssignments : 0.0;
+      
+      return {'pending': pending, 'total': totalAssignments, 'progress': progress};
+    } catch (e) {
+      print('Error calculating assignments: $e');
+      return {'pending': 0, 'total': 0, 'progress': 0.0};
+    }
   }
 
   // --- ANNOUNCEMENTS DESIGN (STREAM) ---
@@ -356,23 +530,43 @@ class _StudentDashboardState extends State<StudentDashboard> {
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Text("Learning Tools", style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: Theme.of(context).colorScheme.onSurface)),
-        const SizedBox(height: 16),
+        const SizedBox(height: 15),
         GridView.count(
           shrinkWrap: true,
           physics: const NeverScrollableScrollPhysics(),
-          crossAxisCount: 3,
-          crossAxisSpacing: 16,
-          mainAxisSpacing: 16,
-          childAspectRatio: 0.9,
+          crossAxisCount: 2,
+          childAspectRatio: 1.2,
+          crossAxisSpacing: 15,
+          mainAxisSpacing: 15,
           children: [
-            _buildLearningTool('Attendance', Icons.calendar_today_outlined, const Color(0xFF2E7D32),
-                    () => Navigator.push(context, MaterialPageRoute(builder: (_) => const AttendancePage()))),
-            _buildLearningTool('Payment', Icons.payment_outlined, const Color(0xFFC2185B),
-                    () => Navigator.push(context, MaterialPageRoute(builder: (_) => const PaymentPage()))),
-            _buildLearningTool('Classroom', Icons.class_outlined, const Color(0xFFE65100),
-                    () => Navigator.pushNamed(context, Routes.studentClassroomDashboard)),
-            _buildLearningTool('Timetable', Icons.schedule_outlined, const Color(0xFF1976D2),
-                    () => Navigator.pushNamed(context, Routes.studentTimetable)),
+            _buildLearningTool(
+              'Attendance',
+              Icons.calendar_today_outlined,
+              const Color(0xFFE8F5E9),
+              const Color(0xFF2E7D32),
+              () => Navigator.push(context, MaterialPageRoute(builder: (_) => const AttendancePage())),
+            ),
+            _buildLearningTool(
+              'Payment',
+              Icons.payment_outlined,
+              const Color(0xFFFCE4EC),
+              const Color(0xFFC2185B),
+              () => Navigator.push(context, MaterialPageRoute(builder: (_) => const PaymentPage())),
+            ),
+            _buildLearningTool(
+              'Classroom',
+              Icons.class_outlined,
+              const Color(0xFFFFF3E0),
+              const Color(0xFFE65100),
+              () => Navigator.pushNamed(context, Routes.studentClassroomDashboard),
+            ),
+            _buildLearningTool(
+              'Timetable',
+              Icons.schedule_outlined,
+              const Color(0xFFE3F2FD),
+              const Color(0xFF1976D2),
+              () => Navigator.pushNamed(context, Routes.studentTimetable),
+            ),
           ],
         ),
         const SizedBox(height: 20),
@@ -382,26 +576,36 @@ class _StudentDashboardState extends State<StudentDashboard> {
     );
   }
 
-  Widget _buildLearningTool(String title, IconData icon, Color color, VoidCallback onTap) {
+  Widget _buildLearningTool(String title, IconData icon, Color circleColor, Color iconColor, VoidCallback onTap) {
     final theme = Theme.of(context);
-    return GestureDetector(
-      onTap: onTap,
-      child: Container(
-        decoration: BoxDecoration(
-          color: theme.cardTheme.color ?? theme.colorScheme.surface,
-          borderRadius: BorderRadius.circular(12),
-          border: Border.all(color: theme.dividerColor),
-        ),
+    return Container(
+      decoration: BoxDecoration(
+        color: theme.cardTheme.color ?? theme.colorScheme.surface,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: theme.dividerColor),
+        boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.1), blurRadius: 10)],
+      ),
+      child: InkWell(
+        borderRadius: BorderRadius.circular(16),
+        onTap: onTap,
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
             Container(
-              padding: const EdgeInsets.all(12),
-              decoration: BoxDecoration(color: color.withOpacity(0.1), shape: BoxShape.circle),
-              child: Icon(icon, size: 24, color: color),
+              width: 56,
+              height: 56,
+              decoration: BoxDecoration(
+                color: circleColor,
+                shape: BoxShape.circle,
+              ),
+              child: Icon(icon, size: 28, color: iconColor),
             ),
             const SizedBox(height: 12),
-            Text(title, style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: theme.colorScheme.onSurface), textAlign: TextAlign.center),
+            Text(
+              title,
+              style: TextStyle(fontWeight: FontWeight.w600, color: theme.colorScheme.onSurface, fontSize: 14),
+              textAlign: TextAlign.center,
+            ),
           ],
         ),
       ),

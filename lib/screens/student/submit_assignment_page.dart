@@ -6,6 +6,7 @@ import 'package:file_picker/file_picker.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
+import '../../services/notification_service.dart';
 
 class SubmitAssignmentPage extends StatefulWidget {
   final String assignmentId;
@@ -31,6 +32,7 @@ class _SubmitAssignmentPageState extends State<SubmitAssignmentPage> {
   List<Map<String, dynamic>> _existingFiles = [];
   List<File> _selectedFiles = [];
   final Map<String, String> _uploadProgress = {};
+  final _notificationService = NotificationService();
 
   static const int _maxFileSize = 716 * 1024; // 700KB
   static const List<String> _supportedExtensions = [
@@ -78,6 +80,72 @@ class _SubmitAssignmentPageState extends State<SubmitAssignmentPage> {
       // Ignore load errors for now
     } finally {
       setState(() => _isLoading = false);
+    }
+  }
+
+  Future<void> _confirmCancelSubmission() async {
+    if (_submissionId == null) return;
+
+    final shouldCancel = await showDialog<bool>(
+      context: context,
+      builder: (context) {
+        return AlertDialog(
+          title: const Text('Cancel submission'),
+          content: const Text(
+            'Are you sure you want to cancel this submission? '
+            'You will be able to submit again afterwards.',
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context, false),
+              child: const Text('No'),
+            ),
+            ElevatedButton(
+              onPressed: () => Navigator.pop(context, true),
+              child: const Text('Yes, cancel'),
+            ),
+          ],
+        );
+      },
+    );
+
+    if (shouldCancel == true) {
+      await _cancelSubmission();
+    }
+  }
+
+  Future<void> _cancelSubmission() async {
+    if (_submissionId == null) return;
+
+    try {
+      await FirebaseFirestore.instance
+          .collection('assignment_submissions')
+          .doc(_submissionId)
+          .delete();
+
+      if (mounted) {
+        setState(() {
+          _submissionId = null;
+          _submittedAt = null;
+          _existingFiles = [];
+          _selectedFiles = [];
+          _uploadProgress.clear();
+        });
+
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Submission cancelled. You can submit again.'),
+          ),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Error cancelling submission: $e'),
+          ),
+        );
+      }
     }
   }
 
@@ -157,13 +225,6 @@ class _SubmitAssignmentPageState extends State<SubmitAssignmentPage> {
       return;
     }
 
-    if (_existingFiles.isEmpty && _selectedFiles.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text("Please attach at least one file.")),
-      );
-      return;
-    }
-
     setState(() {
       _isSubmitting = true;
       _uploadProgress.clear();
@@ -214,12 +275,6 @@ class _SubmitAssignmentPageState extends State<SubmitAssignmentPage> {
       }
 
       final allFiles = [..._existingFiles, ...newFiles];
-      if (allFiles.isEmpty) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text("No valid files to submit.")),
-        );
-        return;
-      }
 
       final submissionData = {
         'assignmentId': widget.assignmentId,
@@ -240,6 +295,25 @@ class _SubmitAssignmentPageState extends State<SubmitAssignmentPage> {
         await FirebaseFirestore.instance
             .collection('assignment_submissions')
             .add(submissionData);
+      }
+
+      // Send notification to teacher
+      try {
+        final classDoc = await FirebaseFirestore.instance
+            .collection('classrooms')
+            .doc(widget.classId)
+            .get();
+        final teacherId = classDoc.data()?['teacherId'] as String?;
+        if (teacherId != null) {
+          await _notificationService.createForUser(
+            userId: teacherId,
+            type: 'assignment',
+            title: 'Assignment Submitted',
+            message: '${user.displayName ?? 'A student'} submitted "${widget.assignmentTitle}"',
+          );
+        }
+      } catch (e) {
+        print('Error sending notification: $e');
       }
 
       if (mounted) {
@@ -271,106 +345,148 @@ class _SubmitAssignmentPageState extends State<SubmitAssignmentPage> {
         title: const Text('Submit Work'),
         elevation: 1,
         iconTheme: const IconThemeData(color: Colors.black),
-        actions: [
-          _isSubmitting
-              ? const Padding(
-                  padding: EdgeInsets.symmetric(horizontal: 16),
-                  child: Center(child: CircularProgressIndicator(strokeWidth: 2)),
-                )
-              : TextButton(
-                  onPressed: _submitWork,
-                  child: const Text('Submit', style: TextStyle(fontWeight: FontWeight.bold)),
-                ),
-        ],
       ),
       body: _isLoading
           ? const Center(child: CircularProgressIndicator())
-          : SingleChildScrollView(
-              padding: const EdgeInsets.all(16),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    widget.assignmentTitle,
-                    style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
-                  ),
-                  const SizedBox(height: 8),
-                  if (_submittedAt != null)
-                    Text(
-                      'Last submitted: ${DateFormat('MMM d, y • h:mm a').format(_submittedAt!.toDate())}',
-                      style: TextStyle(color: Colors.grey.shade600),
-                    ),
-                  const SizedBox(height: 16),
-                  const Divider(),
-                  if (_existingFiles.isNotEmpty) ...[
-                    const Text('Previous Files', style: TextStyle(fontWeight: FontWeight.bold)),
-                    const SizedBox(height: 8),
-                    ..._existingFiles.asMap().entries.map((entry) {
-                      final index = entry.key;
-                      final file = entry.value;
-                      final fileName = file['fileName'] as String? ?? 'File';
-                      return Chip(
-                        label: Text(fileName, style: const TextStyle(fontSize: 12)),
-                        onDeleted: () => _removeExistingFile(index),
-                        deleteIcon: const Icon(Icons.close, size: 18),
-                      );
-                    }),
-                    const SizedBox(height: 16),
-                  ],
-                  ListTile(
-                    leading: const Icon(Icons.attach_file, color: Colors.blue),
-                    title: const Text('Attach File'),
-                    subtitle: Text(
-                      _selectedFiles.isEmpty
-                          ? 'No new files selected'
-                          : '${_selectedFiles.length} new files selected',
-                    ),
-                    onTap: _pickFiles,
-                  ),
-                  Wrap(
-                    spacing: 8.0,
-                    children: _selectedFiles.map((file) {
-                      final fileName = file.path.split('/').last;
-                      final progress = _uploadProgress[fileName];
-                      return Chip(
-                        label: Row(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            if (progress != null && progress != 'Done')
-                              const SizedBox(
-                                width: 12,
-                                height: 12,
-                                child: CircularProgressIndicator(strokeWidth: 2),
+          : Column(
+              children: [
+                Expanded(
+                  child: SingleChildScrollView(
+                    padding: const EdgeInsets.all(16),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          widget.assignmentTitle,
+                          style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+                        ),
+                        const SizedBox(height: 8),
+                        if (_submittedAt != null)
+                          Text(
+                            'Last submitted: ${DateFormat('MMM d, y • h:mm a').format(_submittedAt!.toDate())}',
+                            style: TextStyle(color: Colors.grey.shade600),
+                          ),
+                        const SizedBox(height: 16),
+                        const Divider(),
+                        if (_existingFiles.isNotEmpty) ...[
+                          const Text('Previous Files', style: TextStyle(fontWeight: FontWeight.bold)),
+                          const SizedBox(height: 8),
+                          ..._existingFiles.asMap().entries.map((entry) {
+                            final index = entry.key;
+                            final file = entry.value;
+                            final fileName = file['fileName'] as String? ?? 'File';
+                            return Chip(
+                              label: Text(fileName, style: const TextStyle(fontSize: 12)),
+                              onDeleted: () => _removeExistingFile(index),
+                              deleteIcon: const Icon(Icons.close, size: 18),
+                            );
+                          }),
+                          const SizedBox(height: 16),
+                        ],
+                        ListTile(
+                          leading: const Icon(Icons.attach_file, color: Colors.blue),
+                          title: const Text('Attach File'),
+                          subtitle: Text(
+                            _selectedFiles.isEmpty
+                                ? 'No new files selected'
+                                : '${_selectedFiles.length} new files selected',
+                          ),
+                          onTap: _pickFiles,
+                        ),
+                        Wrap(
+                          spacing: 8.0,
+                          children: _selectedFiles.map((file) {
+                            final fileName = file.path.split('/').last;
+                            final progress = _uploadProgress[fileName];
+                            return Chip(
+                              label: Row(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  if (progress != null && progress != 'Done')
+                                    const SizedBox(
+                                      width: 12,
+                                      height: 12,
+                                      child: CircularProgressIndicator(strokeWidth: 2),
+                                    ),
+                                  if (progress != null && progress != 'Done') const SizedBox(width: 4),
+                                  Flexible(
+                                    child: Text(
+                                      fileName,
+                                      style: const TextStyle(fontSize: 12),
+                                      overflow: TextOverflow.ellipsis,
+                                    ),
+                                  ),
+                                ],
                               ),
-                            if (progress != null && progress != 'Done') const SizedBox(width: 4),
-                            Flexible(
-                              child: Text(
-                                fileName,
-                                style: const TextStyle(fontSize: 12),
-                                overflow: TextOverflow.ellipsis,
+                              onDeleted: () {
+                                setState(() {
+                                  _selectedFiles.remove(file);
+                                  _uploadProgress.remove(fileName);
+                                });
+                              },
+                            );
+                          }).toList(),
+                        ),
+                        if (_selectedFiles.isNotEmpty)
+                          Padding(
+                            padding: const EdgeInsets.only(top: 8.0),
+                            child: Text(
+                              'Note: Maximum file size is 700KB. Please compress large files.',
+                              style: TextStyle(fontSize: 12, color: Colors.grey.shade600),
+                            ),
+                          ),
+                        const SizedBox(height: 80), // space above bottom buttons
+                      ],
+                    ),
+                  ),
+                ),
+                SafeArea(
+                  child: Padding(
+                    padding: const EdgeInsets.all(16.0),
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        SizedBox(
+                          width: double.infinity,
+                          child: ElevatedButton(
+                            onPressed: _isSubmitting ? null : _submitWork,
+                            style: ElevatedButton.styleFrom(
+                              padding: const EdgeInsets.symmetric(vertical: 14),
+                            ),
+                            child: _isSubmitting
+                                ? const SizedBox(
+                                    height: 20,
+                                    width: 20,
+                                    child: CircularProgressIndicator(
+                                      strokeWidth: 2,
+                                      color: Colors.white,
+                                    ),
+                                  )
+                                : const Text(
+                                    'Submit',
+                                    style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+                                  ),
+                          ),
+                        ),
+                        if (_submissionId != null) ...[
+                          const SizedBox(height: 8),
+                          Align(
+                            alignment: Alignment.centerRight,
+                            child: TextButton.icon(
+                              onPressed: _isSubmitting ? null : _confirmCancelSubmission,
+                              icon: const Icon(Icons.cancel, color: Colors.red),
+                              label: const Text(
+                                'Cancel submission',
+                                style: TextStyle(color: Colors.red),
                               ),
                             ),
-                          ],
-                        ),
-                        onDeleted: () {
-                          setState(() {
-                            _selectedFiles.remove(file);
-                            _uploadProgress.remove(fileName);
-                          });
-                        },
-                      );
-                    }).toList(),
-                  ),
-                  if (_selectedFiles.isNotEmpty)
-                    Padding(
-                      padding: const EdgeInsets.only(top: 8.0),
-                      child: Text(
-                        'Note: Maximum file size is 700KB. Please compress large files.',
-                        style: TextStyle(fontSize: 12, color: Colors.grey.shade600),
-                      ),
+                          ),
+                        ],
+                      ],
                     ),
-                ],
-              ),
+                  ),
+                ),
+              ],
             ),
     );
   }

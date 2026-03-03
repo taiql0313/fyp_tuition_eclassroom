@@ -110,7 +110,6 @@ class AdminDashboard extends StatelessWidget {
                             }
                           },
                           itemBuilder: (context) => [
-                            const PopupMenuItem(value: 'profile', child: Text('Profile')),
                             const PopupMenuItem(value: 'settings', child: Text('Settings')),
                             const PopupMenuItem(
                               value: 'logout',

@@ -257,19 +257,6 @@ class _EditAssignmentPageState extends State<EditAssignmentPage> {
       appBar: AppBar(
         title: const Text("Edit Assignment"),
         elevation: 1,
-        actions: [
-          _isLoading
-              ? const Center(
-                  child: Padding(
-                    padding: EdgeInsets.symmetric(horizontal: 16),
-                    child: CircularProgressIndicator(strokeWidth: 2),
-                  ),
-                )
-              : TextButton(
-                  onPressed: _updateAssignment,
-                  child: const Text("Save", style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
-                ),
-        ],
       ),
       body: SingleChildScrollView(
         padding: const EdgeInsets.all(16.0),
@@ -415,6 +402,41 @@ class _EditAssignmentPageState extends State<EditAssignmentPage> {
                   style: TextStyle(fontSize: 12, color: Colors.grey.shade600),
                 ),
               ),
+            const SizedBox(height: 32),
+            // Prominent Save button at the bottom
+            SizedBox(
+              width: double.infinity,
+              height: 50,
+              child: ElevatedButton.icon(
+                onPressed: _isLoading ? null : _updateAssignment,
+                icon: _isLoading
+                    ? const SizedBox(
+                        width: 20,
+                        height: 20,
+                        child: CircularProgressIndicator(
+                          color: Colors.white,
+                          strokeWidth: 2,
+                        ),
+                      )
+                    : const Icon(Icons.save, color: Colors.white),
+                label: Text(
+                  _isLoading ? 'Saving...' : 'Save Changes',
+                  style: const TextStyle(
+                    fontSize: 16,
+                    fontWeight: FontWeight.bold,
+                    color: Colors.white,
+                  ),
+                ),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: Colors.blue,
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  elevation: 2,
+                ),
+              ),
+            ),
+            const SizedBox(height: 16),
           ],
         ),
       ),

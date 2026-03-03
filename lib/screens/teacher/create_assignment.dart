@@ -234,23 +234,6 @@ class _CreateAssignmentPageState extends State<CreateAssignmentPage> {
       appBar: AppBar(
         title: const Text("Create Assignment"),
         elevation: 1,
-        actions: [
-          _isLoading
-              ? const Center(child: Padding(padding: EdgeInsets.symmetric(horizontal: 16), child: CircularProgressIndicator(strokeWidth: 2)))
-              : Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 8),
-                  child: ElevatedButton.icon(
-                    onPressed: _uploadAssignment,
-                    icon: const Icon(Icons.assignment, size: 18),
-                    label: const Text("Assign", style: TextStyle(fontWeight: FontWeight.bold)),
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: Colors.blue,
-                      foregroundColor: Colors.white,
-                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                    ),
-                  ),
-                ),
-        ],
       ),
       body: SingleChildScrollView(
         padding: const EdgeInsets.all(16.0),

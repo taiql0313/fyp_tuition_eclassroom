@@ -12,7 +12,7 @@ class TeacherTimetableChangePage extends StatefulWidget {
 }
 
 class _TeacherTimetableChangePageState
-    extends State<TeacherTimetableChangePage> {
+    extends State<TeacherTimetableChangePage> with WidgetsBindingObserver {
   final List<String> _dayNames = [
     'Monday',
     'Tuesday',
@@ -111,15 +111,64 @@ class _TeacherTimetableChangePageState
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     _loadTeacherClasses();
   }
 
   @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
     _reasonController.dispose();
     _cancelReasonController.dispose();
     _permChangeReasonController.dispose();
     super.dispose();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) {
+      _refreshCurrentClassData();
+    }
+  }
+
+  Future<void> _refreshCurrentClassData() async {
+    if (_selectedClassId == null) return;
+    
+    try {
+      // Reload the classroom data to get updated schedule
+      final classDoc = await FirebaseFirestore.instance
+          .collection('classrooms')
+          .doc(_selectedClassId)
+          .get();
+      
+      if (classDoc.exists && mounted) {
+        final data = classDoc.data()!;
+        final updatedClassInfo = {
+          'classId': classDoc.id,
+          'className': data['className'] ?? 'Unnamed Class',
+          'subject': data['subject'] ?? '',
+          'day': data['day'] ?? '',
+          'timeStart': data['timeStart'] ?? '',
+          'timeEnd': data['timeEnd'] ?? '',
+          'classTime': data['classTime'] ?? '',
+          'form': data['form'] ?? '',
+        };
+        
+        setState(() {
+          _selectedClassInfo = updatedClassInfo;
+          // Update in the list too
+          final index = _classrooms.indexWhere((c) => c['classId'] == _selectedClassId);
+          if (index != -1) {
+            _classrooms[index] = updatedClassInfo;
+          }
+        });
+        
+        // Also reload timetable
+        await _loadCurrentTimetable();
+      }
+    } catch (e) {
+      print('Error refreshing class data: $e');
+    }
   }
 
   /// Admin/timetable uses 0=Sunday, 1=Monday, ..., 6=Saturday
@@ -183,6 +232,7 @@ class _TeacherTimetableChangePageState
       _timetableDocId = null;
     });
     try {
+      // First try to load from timetables collection
       final snapshot = await FirebaseFirestore.instance
           .collection('timetables')
           .where('classId', isEqualTo: _selectedClassId)
@@ -198,6 +248,25 @@ class _TeacherTimetableChangePageState
             _currentTimetable = baseSchedule;
             _cancelledDatesList = cancelledDates;
             _timetableDocId = doc.id;
+          });
+          return;
+        }
+      }
+      
+      // Fallback: load from classroom document if timetable not found
+      if (_selectedClassInfo != null) {
+        final day = _selectedClassInfo!['day'] as String?;
+        final timeStart = _selectedClassInfo!['timeStart'] as String?;
+        final timeEnd = _selectedClassInfo!['timeEnd'] as String?;
+        
+        if (day != null && day.isNotEmpty && timeStart != null && timeEnd != null) {
+          final dayOfWeek = _dayNameToAdminWeekday(day);
+          setState(() {
+            _currentTimetable = {
+              'dayOfWeek': dayOfWeek,
+              'startTime': timeStart,
+              'endTime': timeEnd,
+            };
           });
         }
       }
@@ -493,6 +562,23 @@ class _TeacherTimetableChangePageState
           backgroundColor: const Color(0xFF1458A3),
           iconTheme: const IconThemeData(color: Colors.white),
           elevation: 0,
+          actions: [
+            IconButton(
+              icon: const Icon(Icons.refresh, color: Colors.white),
+              tooltip: 'Refresh',
+              onPressed: () async {
+                await _loadTeacherClasses();
+                if (_selectedClassId != null) {
+                  await _refreshCurrentClassData();
+                }
+                if (mounted) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(content: Text('Data refreshed'), duration: Duration(seconds: 1)),
+                  );
+                }
+              },
+            ),
+          ],
           bottom: TabBar(
             labelColor: Colors.white,
             unselectedLabelColor: Colors.white70,

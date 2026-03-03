@@ -11,8 +11,9 @@ class NotificationService {
     required String title,
     required String message,
   }) async {
+    print('NotificationService: Creating notification for userId=$userId, type=$type, title=$title');
     try {
-      await _db.collection('notifications').add({
+      final docRef = await _db.collection('notifications').add({
         'userId': userId,
         'type': type,
         'title': title,
@@ -21,6 +22,7 @@ class NotificationService {
         'createdAt': FieldValue.serverTimestamp(),
         'timestamp': FieldValue.serverTimestamp(),
       });
+      print('NotificationService: Notification created with id=${docRef.id}');
     } catch (e) {
       print('NotificationService: Error creating notification: $e');
     }

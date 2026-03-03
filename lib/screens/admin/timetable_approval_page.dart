@@ -2,6 +2,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
+import '../../services/notification_service.dart';
 
 class TimetableApprovalPage extends StatefulWidget {
   const TimetableApprovalPage({super.key});
@@ -11,6 +12,8 @@ class TimetableApprovalPage extends StatefulWidget {
 }
 
 class _TimetableApprovalPageState extends State<TimetableApprovalPage> {
+  final _notificationService = NotificationService();
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -320,6 +323,18 @@ class _TimetableApprovalPageState extends State<TimetableApprovalPage> {
         'processedAt': FieldValue.serverTimestamp(),
       });
 
+      // Send notification to teacher
+      final teacherId = data['teacherId'] as String?;
+      final className = data['className'] as String? ?? 'your class';
+      if (teacherId != null) {
+        await _notificationService.createForUser(
+          userId: teacherId,
+          type: 'timetable',
+          title: 'Timetable Change Approved',
+          message: 'Your timetable change request for $className has been approved.',
+        );
+      }
+
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(content: Text('Timetable change approved'), backgroundColor: Colors.green),
@@ -361,7 +376,7 @@ class _TimetableApprovalPageState extends State<TimetableApprovalPage> {
     }
   }
 
-  Future<void> _rejectChangeRequest(String requestId, String comment) async {
+  Future<void> _rejectChangeRequest(String requestId, String comment, {String? teacherId, String? className}) async {
     if (comment.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Please provide a reason for rejection')),
@@ -370,11 +385,36 @@ class _TimetableApprovalPageState extends State<TimetableApprovalPage> {
     }
 
     try {
+      // Get request data if teacherId not provided
+      String? actualTeacherId = teacherId;
+      String? actualClassName = className;
+      if (actualTeacherId == null) {
+        final requestDoc = await FirebaseFirestore.instance
+            .collection('timetable_change_requests')
+            .doc(requestId)
+            .get();
+        if (requestDoc.exists) {
+          final data = requestDoc.data()!;
+          actualTeacherId = data['teacherId'] as String?;
+          actualClassName = data['className'] as String?;
+        }
+      }
+
       await FirebaseFirestore.instance.collection('timetable_change_requests').doc(requestId).update({
         'status': 'rejected',
         'adminComment': comment,
         'processedAt': FieldValue.serverTimestamp(),
       });
+
+      // Send notification to teacher
+      if (actualTeacherId != null) {
+        await _notificationService.createForUser(
+          userId: actualTeacherId,
+          type: 'timetable',
+          title: 'Timetable Change Rejected',
+          message: 'Your timetable change request for ${actualClassName ?? 'your class'} was rejected. Reason: $comment',
+        );
+      }
 
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -666,6 +706,18 @@ class _TimetableApprovalPageState extends State<TimetableApprovalPage> {
         
         await _updateTimeLocks(classId, timetableId, dayOfWeek, timeSlot);
 
+        // Send notification to teacher
+        final teacherId = timetableData['teacherId'] as String?;
+        final subjectName = timetableData['subjectName'] as String? ?? 'your class';
+        if (teacherId != null) {
+          await _notificationService.createForUser(
+            userId: teacherId,
+            type: 'timetable',
+            title: 'Timetable Approved',
+            message: 'Your timetable for $subjectName has been approved.',
+          );
+        }
+
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
             const SnackBar(
@@ -697,12 +749,27 @@ class _TimetableApprovalPageState extends State<TimetableApprovalPage> {
     if (admin == null) return;
 
     try {
-      // Show confirmation dialog
+      // Show confirmation dialog with reason input
+      final reasonController = TextEditingController();
       final confirmed = await showDialog<bool>(
         context: context,
         builder: (context) => AlertDialog(
           title: const Text('Reject Timetable Request'),
-          content: const Text('Are you sure you want to reject this timetable request? The time slot will be unlocked.'),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const Text('Are you sure you want to reject this timetable request? The time slot will be unlocked.'),
+              const SizedBox(height: 16),
+              TextField(
+                controller: reasonController,
+                maxLines: 2,
+                decoration: const InputDecoration(
+                  hintText: 'Reason for rejection (optional)',
+                  border: OutlineInputBorder(),
+                ),
+              ),
+            ],
+          ),
           actions: [
             TextButton(
               onPressed: () => Navigator.pop(context, false),
@@ -719,6 +786,15 @@ class _TimetableApprovalPageState extends State<TimetableApprovalPage> {
 
       if (confirmed != true) return;
 
+      // Get timetable data for notification
+      final timetableDoc = await FirebaseFirestore.instance
+          .collection('timetables')
+          .doc(timetableId)
+          .get();
+      final timetableData = timetableDoc.data();
+      final teacherId = timetableData?['teacherId'] as String?;
+      final subjectName = timetableData?['subjectName'] as String? ?? 'your class';
+
       // Update timetable status
       await FirebaseFirestore.instance
           .collection('timetables')
@@ -727,12 +803,26 @@ class _TimetableApprovalPageState extends State<TimetableApprovalPage> {
         'status': 'rejected',
         'rejectedBy': admin.uid,
         'rejectedAt': FieldValue.serverTimestamp(),
+        'rejectionReason': reasonController.text.trim(),
         'pendingChanges': FieldValue.delete(),
         'lastModified': FieldValue.serverTimestamp(),
       });
 
       // Unlock time slots
       await _unlockTimeSlots(classId, dayOfWeek, timeSlot);
+
+      // Send notification to teacher
+      if (teacherId != null) {
+        final reason = reasonController.text.trim();
+        await _notificationService.createForUser(
+          userId: teacherId,
+          type: 'timetable',
+          title: 'Timetable Rejected',
+          message: reason.isNotEmpty 
+              ? 'Your timetable for $subjectName was rejected. Reason: $reason'
+              : 'Your timetable for $subjectName was rejected.',
+        );
+      }
 
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(

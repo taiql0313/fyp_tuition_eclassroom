@@ -153,8 +153,6 @@ class StudentClassroomDashboard extends StatelessWidget {
                             data['className'] ?? 'Unnamed Class',
                             data['teacherName'] ?? 'Teacher',
                             data['subject'] ?? '',
-                            "0",
-                            "0",
                             Colors.blue.shade300,
                           );
                         },
@@ -217,8 +215,6 @@ class StudentClassroomDashboard extends StatelessWidget {
     String title,
     String teacher,
     String subject,
-    String students,
-    String tasks,
     Color bgColor,
   ) {
     return InkWell(
@@ -274,7 +270,7 @@ class StudentClassroomDashboard extends StatelessWidget {
                   )
                 else
                   const SizedBox.shrink(),
-                const Icon(Icons.bookmark, color: Colors.white38),
+                const SizedBox(width: 20),
               ],
             ),
             const Spacer(),
@@ -296,11 +292,29 @@ class StudentClassroomDashboard extends StatelessWidget {
               children: [
                 const Icon(Icons.people_outline, color: Colors.white70, size: 16),
                 const SizedBox(width: 4),
-                Text(students, style: const TextStyle(color: Colors.white, fontSize: 12)),
-                const Spacer(),
-                const Icon(Icons.assignment_outlined, color: Colors.white70, size: 16),
-                const SizedBox(width: 4),
-                Text(tasks, style: const TextStyle(color: Colors.white, fontSize: 12)),
+                StreamBuilder<QuerySnapshot>(
+                  stream: FirebaseFirestore.instance
+                      .collection('users')
+                      .where('classIds', arrayContains: classId)
+                      .snapshots(),
+                  builder: (context, snapshot) {
+                    if (snapshot.connectionState == ConnectionState.waiting) {
+                      return const SizedBox(
+                        width: 16,
+                        height: 16,
+                        child: CircularProgressIndicator(
+                          strokeWidth: 2,
+                          valueColor: AlwaysStoppedAnimation<Color>(Colors.white70),
+                        ),
+                      );
+                    }
+                    final count = snapshot.data?.docs.length ?? 0;
+                    return Text(
+                      count.toString(),
+                      style: const TextStyle(color: Colors.white, fontSize: 12),
+                    );
+                  },
+                ),
               ],
             ),
           ],

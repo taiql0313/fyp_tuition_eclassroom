@@ -78,28 +78,34 @@ class QuizGradingService {
     if (quizTitle != null) context += 'Quiz: $quizTitle\n';
     if (subject != null) context += 'Subject: $subject\n';
     
-    return '''You are an expert teacher grading a student's short answer question. Please evaluate the student's answer and provide:
-1. A score from 0 to 2 (where 0 = completely wrong, 1 = partially correct, 2 = correct/very good)
-2. Brief constructive feedback (1-2 sentences) explaining what's good or what needs improvement
+    return '''You are an expert teacher grading a student's short answer question based on SEMANTIC MEANING, not exact wording.
 
 Question: $question
 
-Sample Answer (reference): $sampleAnswer
+Reference Answer: $sampleAnswer
 
 Student's Answer: $studentAnswer
 
-Please respond in JSON format only:
-{
-  "score": <0-2>,
-  "feedback": "<your feedback here>"
-}
+IMPORTANT GRADING PRINCIPLE: Grade based on MEANING, not exact words.
+- If the student's answer has the SAME MEANING as the reference answer, give FULL marks (2).
+- Different wording with same meaning = FULL marks (2).
 
-Grading rules:
-- Give FULL marks (2) if the student's answer is correct, contains the key answer, or is clearly equivalent (e.g. reference "China" and student wrote "country China", "China", "The answer is China" — all should get 2 marks).
-- Do NOT deduct marks for extra wording that does not change the meaning (e.g. "country China" when reference is "China" is correct).
-- Give 1 mark only when the answer is partly right but missing the main point or has a significant error.
-- Give 0 only when the answer is wrong or irrelevant.
-Be fair: equivalent or containing-the-correct-answer responses should get full marks (2).''';
+Examples of SAME MEANING (all should get 2 marks):
+- Reference: "China" → Student: "Country China" ✓ (same meaning)
+- Reference: "China" → Student: "The answer is China" ✓ (same meaning)
+- Reference: "Photosynthesis" → Student: "The process is photosynthesis" ✓ (same meaning)
+- Reference: "1945" → Student: "The year 1945" ✓ (same meaning)
+
+Scoring:
+- 2 marks: Answer has the SAME MEANING as reference (even if worded differently)
+- 1 mark: Answer is PARTIALLY correct (missing key info or has minor errors)
+- 0 marks: Answer is WRONG or completely irrelevant
+
+Respond in JSON format only:
+{
+  "score": <0, 1, or 2>,
+  "feedback": "<brief feedback>"
+}''';
   }
 
   /// Call Groq API / 调用 Groq API
@@ -116,7 +122,7 @@ Be fair: equivalent or containing-the-correct-answer responses should get full m
           "messages": [
             {
               "role": "system",
-              "content": "You are an expert teacher grading student answers. Always respond in valid JSON format only."
+              "content": "You are an expert teacher grading student answers based on SEMANTIC MEANING, not exact wording. If the student's answer means the same thing as the reference answer, give full marks. Always respond in valid JSON format only."
             },
             {
               "role": "user",

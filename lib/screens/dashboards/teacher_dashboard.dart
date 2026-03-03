@@ -10,6 +10,9 @@ import '../../routes.dart';
 import '../teacher/create_announcement_page.dart';
 import '../teacher/teacher_chat_list.dart';
 import '../teacher/create_attendance_code_page.dart';
+import '../teacher/notifications/teacher_notification_center_page.dart';
+import '../../services/notification_service.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 class TeacherDashboard extends StatefulWidget {
   const TeacherDashboard({super.key});
@@ -20,6 +23,173 @@ class TeacherDashboard extends StatefulWidget {
 
 class _TeacherDashboardState extends State<TeacherDashboard> {
   final _chatService = StudentTeacherChatService();
+  final _notificationService = NotificationService();
+  bool _hasCheckedAttendanceThisWeek = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _checkWeeklyLowAttendance();
+  }
+
+  Future<void> _checkWeeklyLowAttendance() async {
+    final user = FirebaseAuth.instance.currentUser;
+    if (user == null) return;
+
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final lastCheckKey = 'last_attendance_check_${user.uid}';
+      final lastCheck = prefs.getString(lastCheckKey);
+      
+      final now = DateTime.now();
+      final currentMonday = now.subtract(Duration(days: now.weekday - 1));
+      final mondayStr = '${currentMonday.year}-${currentMonday.month}-${currentMonday.day}';
+
+      if (lastCheck == mondayStr) {
+        _hasCheckedAttendanceThisWeek = true;
+        return;
+      }
+
+      // Get teacher's classes
+      final classesSnapshot = await FirebaseFirestore.instance
+          .collection('classrooms')
+          .where('teacherId', isEqualTo: user.uid)
+          .get();
+
+      if (classesSnapshot.docs.isEmpty) return;
+
+      final lowAttendanceStudents = <Map<String, dynamic>>[];
+
+      for (var classDoc in classesSnapshot.docs) {
+        final classId = classDoc.id;
+        final classData = classDoc.data();
+        final className = classData['className'] ?? 'Unknown Class';
+
+        // Get students in this class
+        final studentsSnapshot = await FirebaseFirestore.instance
+            .collection('users')
+            .where('classIds', arrayContains: classId)
+            .where('role', isEqualTo: 'student')
+            .get();
+
+        for (var studentDoc in studentsSnapshot.docs) {
+          final studentId = studentDoc.id;
+          final studentData = studentDoc.data();
+          final studentName = studentData['displayName'] ?? 'Unknown';
+
+          // Get attendance sessions for this class
+          final sessionsSnapshot = await FirebaseFirestore.instance
+              .collection('attendance_sessions')
+              .where('classId', isEqualTo: classId)
+              .get();
+
+          if (sessionsSnapshot.docs.isEmpty) continue;
+
+          int totalSessions = sessionsSnapshot.docs.length;
+          int attendedSessions = 0;
+
+          for (var session in sessionsSnapshot.docs) {
+            final recordSnapshot = await FirebaseFirestore.instance
+                .collection('attendance_records')
+                .where('sessionId', isEqualTo: session.id)
+                .where('studentId', isEqualTo: studentId)
+                .get();
+
+            if (recordSnapshot.docs.isNotEmpty) {
+              attendedSessions++;
+            }
+          }
+
+          final percentage = totalSessions > 0 ? (attendedSessions / totalSessions) * 100 : 0.0;
+
+          if (percentage < 50 && totalSessions >= 3) {
+            lowAttendanceStudents.add({
+              'studentName': studentName,
+              'className': className,
+              'percentage': percentage,
+            });
+          }
+        }
+      }
+
+      // Create notification if there are low attendance students
+      if (lowAttendanceStudents.isNotEmpty) {
+        final count = lowAttendanceStudents.length;
+        final message = count == 1
+            ? '${lowAttendanceStudents[0]['studentName']} has ${lowAttendanceStudents[0]['percentage'].toStringAsFixed(0)}% attendance in ${lowAttendanceStudents[0]['className']}'
+            : '$count students have attendance below 50%';
+
+        await _notificationService.createForUser(
+          userId: user.uid,
+          type: 'attendance',
+          title: 'Low Attendance Alert',
+          message: message,
+        );
+      }
+
+      // Save that we checked this week
+      await prefs.setString(lastCheckKey, mondayStr);
+      _hasCheckedAttendanceThisWeek = true;
+    } catch (e) {
+      print('Error checking weekly attendance: $e');
+    }
+  }
+
+  Widget _buildNotificationButton(String userId) {
+    final stream = FirebaseFirestore.instance
+        .collection('notifications')
+        .where('userId', isEqualTo: userId)
+        .snapshots();
+
+    return StreamBuilder<QuerySnapshot>(
+      stream: stream,
+      builder: (context, snapshot) {
+        var unreadCount = 0;
+        if (snapshot.hasData) {
+          for (final doc in snapshot.data!.docs) {
+            final data = doc.data() as Map<String, dynamic>;
+            if (data['read'] != true) unreadCount++;
+          }
+        }
+
+        return Stack(
+          clipBehavior: Clip.none,
+          children: [
+            IconButton(
+              icon: Icon(
+                Icons.notifications_none,
+                color: Theme.of(context).appBarTheme.foregroundColor ?? Colors.white,
+              ),
+              onPressed: () => Navigator.push(
+                context,
+                MaterialPageRoute(builder: (_) => const TeacherNotificationCenterPage()),
+              ),
+            ),
+            if (unreadCount > 0)
+              Positioned(
+                right: 6,
+                top: 6,
+                child: Container(
+                  width: 10,
+                  height: 10,
+                  decoration: const BoxDecoration(
+                    color: Colors.red,
+                    shape: BoxShape.circle,
+                    boxShadow: [
+                      BoxShadow(
+                        color: Colors.black26,
+                        blurRadius: 2,
+                        offset: Offset(0, 1),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+          ],
+        );
+      },
+    );
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -41,10 +211,7 @@ class _TeacherDashboardState extends State<TeacherDashboard> {
                   MaterialPageRoute(builder: (_) => const TeacherChatListPage()),
                 ),
               ),
-              IconButton(
-                icon: Icon(Icons.notifications_none, color: theme.appBarTheme.foregroundColor ?? Colors.white),
-                onPressed: () {},
-              ),
+              _buildNotificationButton(uid),
               PopupMenuButton<String>(
                 icon: Icon(Icons.more_vert, color: theme.appBarTheme.foregroundColor ?? Colors.white),
                 onSelected: (value) async {
@@ -56,7 +223,6 @@ class _TeacherDashboardState extends State<TeacherDashboard> {
                   }
                 },
                 itemBuilder: (context) => [
-                  const PopupMenuItem(value: 'profile', child: Text('Profile')),
                   const PopupMenuItem(value: 'settings', child: Text('Settings')),
                   const PopupMenuItem(
                     value: 'logout',
@@ -169,16 +335,6 @@ class _TeacherDashboardState extends State<TeacherDashboard> {
                         ),
                       ),
 
-                      _teacherTile(
-                        context,
-                        'Student Analytics',
-                        Icons.analytics_outlined,
-                        const Color(0xFFFFF3E0), // Light orange
-                        const Color(0xFFF57C00), // Dark orange
-                        Routes.login,
-                        onTap: () {},
-                      ),
-
                       // MESSAGES TILE
                       _teacherTile(
                         context,
@@ -191,16 +347,6 @@ class _TeacherDashboardState extends State<TeacherDashboard> {
                           context,
                           MaterialPageRoute(builder: (_) => const TeacherChatListPage()),
                         ),
-                      ),
-
-                      _teacherTile(
-                        context,
-                        'Grading',
-                        Icons.grade_outlined,
-                        const Color(0xFFFCE4EC), // Light pink
-                        const Color(0xFFC2185B), // Dark pink
-                        Routes.login,
-                        onTap: () {},
                       ),
 
                       // REPLACEMENT CLASS TILE
@@ -224,7 +370,7 @@ class _TeacherDashboardState extends State<TeacherDashboard> {
                       const Text("Recent Activities", style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
                       InkWell(
                         onTap: () {
-                          // TODO: Navigate to full activities page
+
                         },
                         child: const Text(
                           "View All",

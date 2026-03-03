@@ -29,6 +29,9 @@ class _TeacherAssignmentDetailPageState extends State<TeacherAssignmentDetailPag
   String? _userRole;
   bool _isLoadingRole = true;
   late Map<String, dynamic> _assignmentData;
+  bool _isCheckingSubmission = false;
+  bool _hasSubmitted = false;
+  String? _submissionId;
 
   @override
   void initState() {
@@ -36,6 +39,7 @@ class _TeacherAssignmentDetailPageState extends State<TeacherAssignmentDetailPag
     _assignmentData = Map<String, dynamic>.from(widget.assignmentData);
     _fetchUserRole();
     _refreshAssignmentData();
+    _loadStudentSubmission();
   }
 
   Future<void> _fetchUserRole() async {
@@ -135,6 +139,49 @@ class _TeacherAssignmentDetailPageState extends State<TeacherAssignmentDetailPag
       bottomSheet: _buildBottomActions(context),
     );
   }
+
+  Future<void> _loadStudentSubmission() async {
+    final user = FirebaseAuth.instance.currentUser;
+    if (user == null) return;
+
+    setState(() {
+      _isCheckingSubmission = true;
+      _hasSubmitted = false;
+      _submissionId = null;
+    });
+
+    try {
+      final snapshot = await FirebaseFirestore.instance
+          .collection('assignment_submissions')
+          .where('assignmentId', isEqualTo: widget.assignmentId)
+          .where('studentId', isEqualTo: user.uid)
+          .limit(1)
+          .get();
+
+      if (snapshot.docs.isNotEmpty) {
+        final doc = snapshot.docs.first;
+        setState(() {
+          _hasSubmitted = true;
+          _submissionId = doc.id;
+        });
+      } else {
+        setState(() {
+          _hasSubmitted = false;
+          _submissionId = null;
+        });
+      }
+    } catch (_) {
+      // Ignore submission load errors for now
+    } finally {
+      if (mounted) {
+        setState(() {
+          _isCheckingSubmission = false;
+        });
+      }
+    }
+  }
+
+  // Cancelling submission is now handled inside SubmitAssignmentPage.
 
   Widget _buildMainCard() {
     // Get assignment data
@@ -797,38 +844,56 @@ class _TeacherAssignmentDetailPageState extends State<TeacherAssignmentDetailPag
         ),
       );
     } else {
-      // Student actions: Submit Work / 学生操作：提交作业
+      // Student actions: Submit / Submitted + Cancel
       return Container(
         padding: const EdgeInsets.all(20),
-        decoration: const BoxDecoration(color: Colors.white, border: Border(top: BorderSide(color: Colors.black12))),
-        child: Row(
+        decoration: const BoxDecoration(
+          color: Colors.white,
+          border: Border(top: BorderSide(color: Colors.black12)),
+        ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
           children: [
-            Expanded(
-              child: ElevatedButton.icon(
-                onPressed: () {
-                  Navigator.push(
-                    context,
-                    MaterialPageRoute(
-                      builder: (_) => SubmitAssignmentPage(
-                        assignmentId: widget.assignmentId,
-                        classId: _assignmentData['classId'] ?? '',
-                        assignmentTitle: _assignmentData['title'] ?? 'Assignment',
+            if (_isCheckingSubmission)
+              const Padding(
+                padding: EdgeInsets.symmetric(vertical: 8.0),
+                child: LinearProgressIndicator(),
+              ),
+            Row(
+              children: [
+                Expanded(
+                  child: ElevatedButton.icon(
+                    onPressed: _isCheckingSubmission
+                        ? null
+                        : () async {
+                            await Navigator.push(
+                              context,
+                              MaterialPageRoute(
+                                builder: (_) => SubmitAssignmentPage(
+                                  assignmentId: widget.assignmentId,
+                                  classId: _assignmentData['classId'] ?? '',
+                                  assignmentTitle: _assignmentData['title'] ?? 'Assignment',
+                                ),
+                              ),
+                            );
+                            // Refresh submission status after returning
+                            await _loadStudentSubmission();
+                          },
+                    icon: Icon(_hasSubmitted ? Icons.check_circle : Icons.upload_file),
+                    label: Text(_hasSubmitted ? 'Submitted' : 'Submit Work'),
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: _hasSubmitted ? Colors.grey : Colors.green,
+                      foregroundColor: Colors.white,
+                      padding: const EdgeInsets.symmetric(vertical: 15),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(15),
                       ),
                     ),
-                  );
-                },
-                icon: const Icon(Icons.upload_file),
-                label: const Text("Submit Work"),
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: Colors.green,
-                  foregroundColor: Colors.white,
-                  padding: const EdgeInsets.symmetric(vertical: 15),
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(15),
                   ),
                 ),
-              ),
+              ],
             ),
+            // Cancel submission is handled from the SubmitAssignmentPage UI.
           ],
         ),
       );

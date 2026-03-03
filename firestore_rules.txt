@@ -78,8 +78,11 @@ service cloud.firestore {
         isTeacher()
       );
       
-      // Teachers can delete any submissions
-      allow delete: if request.auth != null && isTeacher();
+      // Teachers can delete any submissions; students can delete their own
+      allow delete: if request.auth != null && (
+        isTeacher() ||
+        (isStudent() && resource.data.studentId == request.auth.uid)
+      );
     }
     
     // --- QUIZ SUBMISSIONS COLLECTION ---

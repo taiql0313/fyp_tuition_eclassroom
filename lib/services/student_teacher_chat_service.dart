@@ -3,9 +3,11 @@ import 'dart:convert';
 import 'dart:io';
 import 'dart:typed_data';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'notification_service.dart';
 
 class StudentTeacherChatService {
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
+  final NotificationService _notificationService = NotificationService();
 
   // 1. Start or get existing chat
   Future<String> startChat({
@@ -116,6 +118,29 @@ class StudentTeacherChatService {
       await _firestore.collection('users').doc(senderId).update({
         'lastSeen': FieldValue.serverTimestamp(),
       });
+
+      // Create notification for the receiver (teacher gets notified when student sends)
+      if (isStudent) {
+        final teacherId = data['teacherId'] as String?;
+        final studentName = data['studentName'] as String? ?? 'A student';
+        print('DEBUG: isStudent=$isStudent, teacherId=$teacherId, studentName=$studentName');
+        if (teacherId != null && teacherId.isNotEmpty) {
+          print('DEBUG: Creating notification for teacher $teacherId');
+          try {
+            await _notificationService.createForUser(
+              userId: teacherId,
+              type: 'message',
+              title: 'New Message',
+              message: '$studentName sent you a message',
+            );
+            print('DEBUG: Notification created successfully');
+          } catch (e) {
+            print('DEBUG: Error creating notification: $e');
+          }
+        } else {
+          print('DEBUG: teacherId is null or empty, skipping notification');
+        }
+      }
     } catch (e) {
       print('StudentTeacherChatService Error (sendMessage): $e');
       rethrow;
