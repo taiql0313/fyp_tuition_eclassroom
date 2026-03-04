@@ -16,6 +16,7 @@ class _StudentTimetablePageState extends State<StudentTimetablePage> with Single
   List<Map<String, dynamic>> _enrolledClasses = [];
   Map<String, Map<String, dynamic>> _timetables = {};
   Map<String, String> _teacherNames = {};
+  Map<String, List<Map<String, dynamic>>> _replacementClasses = {};
   bool _isLoading = true;
 
   final List<String> _dayNames = ['MON', 'TUE', 'WED', 'THU', 'FRI', 'SAT', 'SUN'];
@@ -99,8 +100,9 @@ class _StudentTimetablePageState extends State<StudentTimetablePage> with Single
       // Fetch teacher names
       await _loadTeacherNames(teacherIds.toList());
 
-      // Load timetables
+      // Load timetables and approved replacement classes
       await _loadTimetables(classIds);
+      await _loadReplacementClasses(classIds);
 
       setState(() => _isLoading = false);
     } catch (e) {
@@ -153,15 +155,84 @@ class _StudentTimetablePageState extends State<StudentTimetablePage> with Single
     }
   }
 
+  Future<void> _loadReplacementClasses(List<String> classIds) async {
+    _replacementClasses = {};
+    try {
+      if (classIds.isEmpty) return;
+
+      // Firestore whereIn limit is 10
+      for (var i = 0; i < classIds.length; i += 10) {
+        final batch = classIds.skip(i).take(10).toList();
+
+        final snapshot = await FirebaseFirestore.instance
+            .collection('replacement_classes')
+            .where('classId', whereIn: batch)
+            .get();
+
+        for (var doc in snapshot.docs) {
+          final data = doc.data();
+          // Only show approved replacement classes
+          if (data['status'] != 'approved') continue;
+
+          final classId = data['classId'] as String? ?? '';
+          if (classId.isEmpty) continue;
+
+          final list = _replacementClasses.putIfAbsent(classId, () => []);
+          list.add({
+            'originalDateStr': data['originalDateStr'] as String?,
+            'replacementDateStr': data['replacementDateStr'] as String?,
+            'startTime': data['startTime'] as String? ?? '',
+            'endTime': data['endTime'] as String? ?? '',
+          });
+        }
+      }
+    } catch (e) {
+      print('Error loading replacement classes: $e');
+    }
+  }
+
   List<Map<String, dynamic>> _getClassesForDay(int dayIndex) {
     // dayIndex: 0=Mon, 1=Tue, ..., 6=Sun
     // Convert to stored format: 1=Mon, 2=Tue, ..., 7=Sun (or 0=Sun depending on your data)
     final targetDayOfWeek = dayIndex + 1; // 1-7 (Mon-Sun)
     final classesForDay = <Map<String, dynamic>>[];
+    final dateForDay = _getDateForDayIndex(dayIndex);
+    final dateStr = DateFormat('yyyy-MM-dd').format(dateForDay);
 
     for (var classData in _enrolledClasses) {
       final classId = classData['classId'] as String;
       final timetable = _timetables[classId];
+      final replacements = _replacementClasses[classId] ?? [];
+
+      // If there is an approved replacement whose originalDate is this date,
+      // we treat the original weekly session as cancelled for this date.
+      final isOriginalCancelledHere = replacements.any(
+        (r) => r['originalDateStr'] == dateStr,
+      );
+
+      // If there is an approved replacement whose replacementDate is this date,
+      // we show the replacement session on this date (even if on a different weekday).
+      final replacementForThisDate = replacements.firstWhere(
+        (r) => r['replacementDateStr'] == dateStr,
+        orElse: () => {},
+      );
+
+      if (replacementForThisDate.isNotEmpty) {
+        final teacherId = classData['teacherId'] as String;
+        final teacherName = _teacherNames[teacherId] ?? 'Unknown Teacher';
+
+        classesForDay.add({
+          'classId': classId,
+          'className': classData['className'],
+          'subject': classData['subject'],
+          'teacherName': teacherName,
+          'startTime': replacementForThisDate['startTime'] ?? '',
+          'endTime': replacementForThisDate['endTime'] ?? '',
+          'isReplacement': true,
+        });
+        // Continue to next class; do not also add base schedule for this date
+        continue;
+      }
 
       if (timetable != null) {
         final baseSchedule = timetable['baseSchedule'] as Map<String, dynamic>?;
@@ -180,7 +251,7 @@ class _StudentTimetablePageState extends State<StudentTimetablePage> with Single
               convertedDay = scheduleDayOfWeek; // Mon=1, Tue=2, etc.
             }
 
-            if (convertedDay == targetDayOfWeek) {
+            if (convertedDay == targetDayOfWeek && !isOriginalCancelledHere) {
               final teacherId = classData['teacherId'] as String;
               final teacherName = _teacherNames[teacherId] ?? 'Unknown Teacher';
 
@@ -191,6 +262,7 @@ class _StudentTimetablePageState extends State<StudentTimetablePage> with Single
                 'teacherName': teacherName,
                 'startTime': baseSchedule['startTime'] ?? '',
                 'endTime': baseSchedule['endTime'] ?? '',
+                'isReplacement': false,
               });
             }
           }
@@ -340,6 +412,7 @@ class _StudentTimetablePageState extends State<StudentTimetablePage> with Single
     final endTime = _formatTime(classData['endTime'] as String);
     final className = classData['className'] as String;
     final teacherName = classData['teacherName'] as String;
+    final isReplacement = (classData['isReplacement'] as bool?) ?? false;
 
     // Alternate colors for visual distinction
     final colors = [
@@ -400,14 +473,38 @@ class _StudentTimetablePageState extends State<StudentTimetablePage> with Single
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  // Subject name
-                  Text(
-                    className.toUpperCase(),
-                    style: const TextStyle(
-                      fontSize: 15,
-                      fontWeight: FontWeight.bold,
-                      color: Colors.white,
-                    ),
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      Expanded(
+                        child: Text(
+                          className.toUpperCase(),
+                          style: const TextStyle(
+                            fontSize: 15,
+                            fontWeight: FontWeight.bold,
+                            color: Colors.white,
+                          ),
+                          maxLines: 2,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ),
+                      if (isReplacement)
+                        Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                          decoration: BoxDecoration(
+                            color: Colors.white.withOpacity(0.2),
+                            borderRadius: BorderRadius.circular(12),
+                          ),
+                          child: const Text(
+                            'Replacement',
+                            style: TextStyle(
+                              color: Colors.white,
+                              fontSize: 10,
+                              fontWeight: FontWeight.bold,
+                            ),
+                          ),
+                        ),
+                    ],
                   ),
                   const SizedBox(height: 8),
                   // Teacher name

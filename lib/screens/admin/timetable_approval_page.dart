@@ -29,6 +29,8 @@ class _TimetableApprovalPageState extends State<TimetableApprovalPage> {
           children: [
             _buildChangeRequestsSection(),
             const SizedBox(height: 24),
+            _buildReplacementRequestsSection(),
+            const SizedBox(height: 24),
             _buildPendingTimetablesSection(),
           ],
         ),
@@ -84,28 +86,8 @@ class _TimetableApprovalPageState extends State<TimetableApprovalPage> {
 
         final docs = snapshot.data?.docs ?? [];
         if (docs.isEmpty) {
-          return Container(
-            padding: const EdgeInsets.all(20),
-            decoration: BoxDecoration(
-              color: Colors.white,
-              borderRadius: BorderRadius.circular(16),
-              boxShadow: [
-                BoxShadow(color: Colors.black.withOpacity(0.05), blurRadius: 8, offset: const Offset(0, 2)),
-              ],
-            ),
-            child: Row(
-              children: [
-                Icon(Icons.check_circle_outline, size: 32, color: Colors.green.shade300),
-                const SizedBox(width: 12),
-                const Expanded(
-                  child: Text(
-                    'No pending timetable change requests',
-                    style: TextStyle(fontSize: 16),
-                  ),
-                ),
-              ],
-            ),
-          );
+          // No change requests; show nothing here
+          return const SizedBox.shrink();
         }
 
         return Column(
@@ -114,6 +96,70 @@ class _TimetableApprovalPageState extends State<TimetableApprovalPage> {
             const Text('Timetable Change Requests', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
             const SizedBox(height: 12),
             ...docs.map((doc) => _buildChangeRequestCard(doc.id, doc.data() as Map<String, dynamic>)).toList(),
+          ],
+        );
+      },
+    );
+  }
+
+  // --- REPLACEMENT CLASS REQUESTS (TEMPORARY) ---
+  Widget _buildReplacementRequestsSection() {
+    return StreamBuilder<QuerySnapshot>(
+      stream: FirebaseFirestore.instance
+          .collection('replacement_classes')
+          .where('status', isEqualTo: 'pending')
+          .snapshots(),
+      builder: (context, snapshot) {
+        if (snapshot.connectionState == ConnectionState.waiting) {
+          return const Center(child: CircularProgressIndicator());
+        }
+
+        if (snapshot.hasError) {
+          return Container(
+            padding: const EdgeInsets.all(20),
+            margin: const EdgeInsets.only(bottom: 16),
+            decoration: BoxDecoration(
+              color: Colors.red.shade50,
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(color: Colors.red.shade200),
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    Icon(Icons.error_outline, color: Colors.red.shade700),
+                    const SizedBox(width: 8),
+                    Text('Error loading replacement requests', style: TextStyle(fontWeight: FontWeight.bold, color: Colors.red.shade700)),
+                  ],
+                ),
+                const SizedBox(height: 8),
+                Text(
+                  '${snapshot.error}',
+                  style: TextStyle(fontSize: 13, color: Colors.red.shade900),
+                ),
+                const SizedBox(height: 8),
+                Text(
+                  'If you see "index" in the error, run: firebase deploy --only firestore:indexes',
+                  style: TextStyle(fontSize: 12, fontStyle: FontStyle.italic, color: Colors.red.shade800),
+                ),
+              ],
+            ),
+          );
+        }
+
+        final docs = snapshot.data?.docs ?? [];
+        if (docs.isEmpty) {
+          // No replacement requests; show nothing here
+          return const SizedBox.shrink();
+        }
+
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text('Replacement Class Requests', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+            const SizedBox(height: 12),
+            ...docs.map((doc) => _buildReplacementRequestCard(doc.id, doc.data() as Map<String, dynamic>)).toList(),
           ],
         );
       },
@@ -637,6 +683,357 @@ class _TimetableApprovalPageState extends State<TimetableApprovalPage> {
         );
       },
     );
+  }
+
+  Widget _buildReplacementRequestCard(String requestId, Map<String, dynamic> data) {
+    final className = data['className'] as String? ?? 'Unknown Class';
+    final subject = data['subject'] as String? ?? '';
+    final teacherName = data['teacherName'] as String? ?? 'Teacher';
+
+    final originalSchedule = data['originalSchedule'] as Map<String, dynamic>?;
+    final originalDayOfWeek = originalSchedule?['dayOfWeek'] as int?;
+    final originalStartTime = originalSchedule?['startTime'] as String? ?? '--:--';
+    final originalEndTime = originalSchedule?['endTime'] as String? ?? '--:--';
+
+    String originalDayName = 'Unknown';
+    if (originalDayOfWeek != null) {
+      const days = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+      if (originalDayOfWeek >= 0 && originalDayOfWeek < days.length) {
+        originalDayName = days[originalDayOfWeek];
+      }
+    }
+
+    final replacementDateTs = data['replacementDate'] as Timestamp?;
+    final replacementDateStr = replacementDateTs != null
+        ? DateFormat('EEE, MMM d, y').format(replacementDateTs.toDate())
+        : (data['replacementDateStr'] as String? ?? 'Unknown date');
+
+    final replacementStart = data['startTime'] as String? ?? '--:--';
+    final replacementEnd = data['endTime'] as String? ?? '--:--';
+    final reason = data['reason'] as String? ?? '';
+
+    return Container(
+      margin: const EdgeInsets.only(bottom: 16),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: Colors.blue.shade100),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.03),
+            blurRadius: 8,
+            offset: const Offset(0, 3),
+          ),
+        ],
+      ),
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            // Header
+            Row(
+              children: [
+                Container(
+                  padding: const EdgeInsets.all(10),
+                  decoration: BoxDecoration(
+                    color: Colors.blue.shade50,
+                    borderRadius: BorderRadius.circular(10),
+                  ),
+                  child: Icon(
+                    Icons.swap_horiz,
+                    color: Colors.blue.shade700,
+                    size: 24,
+                  ),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        subject.isNotEmpty ? '$subject - $className' : className,
+                        style: const TextStyle(
+                          fontSize: 16,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                      const SizedBox(height: 4),
+                      Text(
+                        'Teacher: $teacherName',
+                        style: TextStyle(
+                          fontSize: 13,
+                          color: Colors.grey.shade700,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                  decoration: BoxDecoration(
+                    color: Colors.orange.shade50,
+                    borderRadius: BorderRadius.circular(20),
+                  ),
+                  child: Text(
+                    'Temporary',
+                    style: TextStyle(
+                      color: Colors.orange.shade700,
+                      fontWeight: FontWeight.bold,
+                      fontSize: 11,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+
+            const SizedBox(height: 16),
+            const Divider(),
+
+            // Original vs Replacement
+            const SizedBox(height: 8),
+            const Text(
+              'Original schedule:',
+              style: TextStyle(fontWeight: FontWeight.w600, fontSize: 13),
+            ),
+            const SizedBox(height: 6),
+            Row(
+              children: [
+                _buildScheduleItem(
+                  Icons.calendar_today,
+                  originalDayName,
+                  Colors.grey,
+                ),
+                const SizedBox(width: 12),
+                _buildScheduleItem(
+                  Icons.access_time,
+                  '$originalStartTime - $originalEndTime',
+                  Colors.grey,
+                ),
+              ],
+            ),
+
+            const SizedBox(height: 12),
+            const Text(
+              'Requested replacement:',
+              style: TextStyle(fontWeight: FontWeight.w600, fontSize: 13),
+            ),
+            const SizedBox(height: 6),
+            Row(
+              children: [
+                _buildScheduleItem(
+                  Icons.event,
+                  replacementDateStr,
+                  Colors.blue,
+                ),
+                const SizedBox(width: 12),
+                _buildScheduleItem(
+                  Icons.access_time,
+                  '$replacementStart - $replacementEnd',
+                  Colors.green,
+                ),
+              ],
+            ),
+
+            if (reason.isNotEmpty) ...[
+              const SizedBox(height: 12),
+              Text(
+                'Reason: $reason',
+                style: TextStyle(fontSize: 13, color: Colors.grey.shade800),
+              ),
+            ],
+
+            const SizedBox(height: 16),
+            Row(
+              children: [
+                Expanded(
+                  child: OutlinedButton.icon(
+                    onPressed: () => _showRejectReplacementDialog(requestId, data),
+                    icon: const Icon(Icons.close, size: 18),
+                    label: const Text('Reject'),
+                    style: OutlinedButton.styleFrom(
+                      foregroundColor: Colors.red,
+                      side: const BorderSide(color: Colors.red),
+                      padding: const EdgeInsets.symmetric(vertical: 10),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(10),
+                      ),
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  flex: 2,
+                  child: ElevatedButton.icon(
+                    onPressed: () => _approveReplacementRequest(requestId, data),
+                    icon: const Icon(Icons.check, size: 18),
+                    label: const Text('Approve'),
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: Colors.green,
+                      foregroundColor: Colors.white,
+                      padding: const EdgeInsets.symmetric(vertical: 10),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(10),
+                      ),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Future<void> _approveReplacementRequest(String requestId, Map<String, dynamic> data) async {
+    try {
+      final admin = FirebaseAuth.instance.currentUser;
+      if (admin == null) return;
+
+      final ref = FirebaseFirestore.instance.collection('replacement_classes').doc(requestId);
+      await ref.update({
+        'status': 'approved',
+        'processedAt': FieldValue.serverTimestamp(),
+        'approvedBy': admin.uid,
+        'adminComment': '',
+      });
+
+      // Notify teacher
+      final teacherId = data['teacherId'] as String?;
+      final className = data['className'] as String? ?? 'your class';
+      if (teacherId != null) {
+        await _notificationService.createForUser(
+          userId: teacherId,
+          type: 'timetable',
+          title: 'Replacement Class Approved',
+          message: 'Your replacement class request for $className has been approved.',
+        );
+      }
+
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Replacement class request approved'),
+            backgroundColor: Colors.green,
+          ),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Error approving replacement: $e'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    }
+  }
+
+  Future<void> _showRejectReplacementDialog(String requestId, Map<String, dynamic> data) async {
+    final controller = TextEditingController();
+    final result = await showDialog<bool>(
+      context: context,
+      builder: (context) {
+        return AlertDialog(
+          title: const Text('Reject Replacement Request'),
+          content: TextField(
+            controller: controller,
+            maxLines: 3,
+            decoration: const InputDecoration(
+              hintText: 'Reason for rejection...',
+            ),
+          ),
+          actions: [
+            TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('Cancel')),
+            ElevatedButton(onPressed: () => Navigator.pop(context, true), child: const Text('Reject')),
+          ],
+        );
+      },
+    );
+
+    if (result == true) {
+      await _rejectReplacementRequest(requestId, data, controller.text.trim());
+    }
+  }
+
+  Future<void> _rejectReplacementRequest(String requestId, Map<String, dynamic> data, String comment) async {
+    if (comment.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Please provide a reason for rejection')),
+      );
+      return;
+    }
+
+    try {
+      final admin = FirebaseAuth.instance.currentUser;
+      if (admin == null) return;
+
+      // Update request status
+      final ref = FirebaseFirestore.instance.collection('replacement_classes').doc(requestId);
+      await ref.update({
+        'status': 'rejected',
+        'processedAt': FieldValue.serverTimestamp(),
+        'approvedBy': admin.uid,
+        'adminComment': comment,
+      });
+
+      // Remove time lock for this replacement (if exists)
+      final dateStr = data['replacementDateStr'] as String? ?? '';
+      final startTime = data['startTime'] as String? ?? '';
+      final endTime = data['endTime'] as String? ?? '';
+      if (dateStr.isNotEmpty && startTime.isNotEmpty && endTime.isNotEmpty) {
+        final timeSlot = '$startTime-$endTime';
+        final lockDocRef = FirebaseFirestore.instance
+            .collection('timeLocks')
+            .doc('$dateStr-$timeSlot');
+        final lockDoc = await lockDocRef.get();
+        if (lockDoc.exists) {
+          final lockedBy = List<Map<String, dynamic>>.from(
+            (lockDoc.data()?['lockedBy'] as List<dynamic>? ?? [])
+                .whereType<Map<String, dynamic>>(),
+          );
+          lockedBy.removeWhere((lock) => lock['timetableId'] == requestId);
+
+          if (lockedBy.isEmpty) {
+            await lockDocRef.delete();
+          } else {
+            await lockDocRef.update({'lockedBy': lockedBy});
+          }
+        }
+      }
+
+      // Notify teacher
+      final teacherId = data['teacherId'] as String?;
+      final className = data['className'] as String? ?? 'your class';
+      if (teacherId != null) {
+        await _notificationService.createForUser(
+          userId: teacherId,
+          type: 'timetable',
+          title: 'Replacement Class Rejected',
+          message: 'Your replacement class request for $className was rejected. Reason: $comment',
+        );
+      }
+
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Replacement class request rejected'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Error rejecting replacement: $e'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    }
   }
 
   Widget _buildScheduleItem(IconData icon, String text, Color color) {

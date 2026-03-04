@@ -118,9 +118,17 @@ service cloud.firestore {
 
     // --- REPLACEMENT CLASSES (one-time replacement class scheduling) ---
     match /replacement_classes/{replacementId} {
-      // Teachers can read their own replacement classes; admins can read all
+      // Teachers can read their own replacement classes; admins can read all;
+      // students can read replacement classes for classrooms they are enrolled in
       allow read: if request.auth != null &&
-        (resource.data.teacherId == request.auth.uid || isAdmin());
+        (
+          resource.data.teacherId == request.auth.uid ||
+          isAdmin() ||
+          (
+            isStudent() &&
+            resource.data.classId in get(/databases/$(database)/documents/users/$(request.auth.uid)).data.classIds
+          )
+        );
       
       // Teachers can create replacement classes for their own classes
       allow create: if request.auth != null && isTeacher() && 

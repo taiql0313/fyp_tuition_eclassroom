@@ -361,7 +361,7 @@ class _TeacherTimetableChangePageState
       final teacherName =
           teacherDoc.data()?['displayName'] ?? user.displayName ?? 'Teacher';
 
-      // Save replacement class
+      // Save replacement class request (requires admin approval)
       final replacementRef = await FirebaseFirestore.instance
           .collection('replacement_classes')
           .add({
@@ -378,13 +378,19 @@ class _TeacherTimetableChangePageState
                 'endTime': _currentTimetable!['endTime'],
               }
             : null,
+        // Original session date being replaced
+        'originalDate': _selectedDate != null ? Timestamp.fromDate(_selectedDate!) : null,
+        'originalDateStr': _selectedDate != null
+            ? DateFormat('yyyy-MM-dd').format(_selectedDate!)
+            : null,
+        // Requested replacement date/time
         'replacementDate': Timestamp.fromDate(replacementDate),
         'replacementDateStr': dateStr,
         'startTime': timeStart,
         'endTime': timeEnd,
         'timeSlotLabel': _selectedTimeSlotLabel,
         'reason': _reasonController.text.trim(),
-        'status': 'approved',
+        'status': 'pending',
         'isOneTime': true,
         'createdAt': FieldValue.serverTimestamp(),
       });
@@ -419,9 +425,9 @@ class _TeacherTimetableChangePageState
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: Text(
-              'Replacement class scheduled for ${DateFormat('EEEE, MMM d').format(replacementDate)} ($_selectedTimeSlotLabel)',
+              'Replacement request submitted for ${DateFormat('EEEE, MMM d').format(replacementDate)} ($_selectedTimeSlotLabel). Awaiting admin approval.',
             ),
-            backgroundColor: Colors.green,
+            backgroundColor: Colors.orange,
             duration: const Duration(seconds: 3),
           ),
         );
