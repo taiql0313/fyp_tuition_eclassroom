@@ -71,13 +71,16 @@ class _TeacherTimetableChangePageState
 
   /// Get list of upcoming dates when the class normally meets (based on original schedule)
   List<DateTime> _getUpcomingSessionDates() {
-    String? dayName = _selectedClassInfo?['day'] as String?;
+    String? dayName;
+    // Prefer timetable collection data (always fresh from _loadCurrentTimetable)
+    final dayOfWeek = _currentTimetable?['dayOfWeek'] as int?;
+    if (dayOfWeek != null && dayOfWeek >= 0 && dayOfWeek <= 6) {
+      const adminDays = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+      dayName = adminDays[dayOfWeek];
+    }
+    // Fallback: use classroom info
     if (dayName == null || dayName.isEmpty) {
-      // Fallback: get from timetable baseSchedule
-      final dayOfWeek = _currentTimetable?['dayOfWeek'] as int?;
-      if (dayOfWeek != null && dayOfWeek >= 1 && dayOfWeek <= 7) {
-        dayName = _dayNames[dayOfWeek - 1];
-      }
+      dayName = _selectedClassInfo?['day'] as String?;
     }
     if (dayName == null || dayName.isEmpty) return [];
 
@@ -232,6 +235,30 @@ class _TeacherTimetableChangePageState
       _timetableDocId = null;
     });
     try {
+      // Also refresh classroom data so _selectedClassInfo stays in sync
+      final classDoc = await FirebaseFirestore.instance
+          .collection('classrooms')
+          .doc(_selectedClassId)
+          .get();
+      if (classDoc.exists && mounted) {
+        final cData = classDoc.data()!;
+        final updatedInfo = {
+          'classId': classDoc.id,
+          'className': cData['className'] ?? 'Unnamed Class',
+          'subject': cData['subject'] ?? '',
+          'day': cData['day'] ?? '',
+          'timeStart': cData['timeStart'] ?? '',
+          'timeEnd': cData['timeEnd'] ?? '',
+          'classTime': cData['classTime'] ?? '',
+          'form': cData['form'] ?? '',
+        };
+        setState(() {
+          _selectedClassInfo = updatedInfo;
+          final idx = _classrooms.indexWhere((c) => c['classId'] == _selectedClassId);
+          if (idx != -1) _classrooms[idx] = updatedInfo;
+        });
+      }
+
       // First try to load from timetables collection
       final snapshot = await FirebaseFirestore.instance
           .collection('timetables')
@@ -361,6 +388,46 @@ class _TeacherTimetableChangePageState
       final teacherName =
           teacherDoc.data()?['displayName'] ?? user.displayName ?? 'Teacher';
 
+      // Cancel any existing replacement requests for the same original date & class
+      final originalDateStr = DateFormat('yyyy-MM-dd').format(_selectedDate!);
+      final existingReplacements = await FirebaseFirestore.instance
+          .collection('replacement_classes')
+          .where('classId', isEqualTo: _selectedClassId)
+          .where('teacherId', isEqualTo: user.uid)
+          .where('originalDateStr', isEqualTo: originalDateStr)
+          .get();
+
+      for (var oldDoc in existingReplacements.docs) {
+        final oldData = oldDoc.data();
+        final oldStatus = oldData['status'] as String? ?? '';
+        // Only remove pending or approved ones (not already rejected)
+        if (oldStatus == 'pending' || oldStatus == 'approved') {
+          // Clean up old time lock
+          final oldReplDateStr = oldData['replacementDateStr'] as String? ?? '';
+          final oldStart = oldData['startTime'] as String? ?? '';
+          final oldEnd = oldData['endTime'] as String? ?? '';
+          if (oldReplDateStr.isNotEmpty && oldStart.isNotEmpty && oldEnd.isNotEmpty) {
+            final oldLockRef = FirebaseFirestore.instance
+                .collection('timeLocks')
+                .doc('$oldReplDateStr-$oldStart-$oldEnd');
+            final oldLockDoc = await oldLockRef.get();
+            if (oldLockDoc.exists) {
+              final lockedBy = List<Map<String, dynamic>>.from(
+                (oldLockDoc.data()?['lockedBy'] as List<dynamic>? ?? [])
+                    .whereType<Map<String, dynamic>>(),
+              );
+              lockedBy.removeWhere((lock) => lock['timetableId'] == oldDoc.id);
+              if (lockedBy.isEmpty) {
+                await oldLockRef.delete();
+              } else {
+                await oldLockRef.update({'lockedBy': lockedBy});
+              }
+            }
+          }
+          await oldDoc.reference.delete();
+        }
+      }
+
       // Save replacement class request (requires admin approval)
       final replacementRef = await FirebaseFirestore.instance
           .collection('replacement_classes')
@@ -427,7 +494,7 @@ class _TeacherTimetableChangePageState
             content: Text(
               'Replacement request submitted for ${DateFormat('EEEE, MMM d').format(replacementDate)} ($_selectedTimeSlotLabel). Awaiting admin approval.',
             ),
-            backgroundColor: Colors.orange,
+            backgroundColor: Colors.green,
             duration: const Duration(seconds: 3),
           ),
         );
@@ -884,9 +951,19 @@ class _TeacherTimetableChangePageState
   }
 
   Widget _buildCurrentTimetableCard() {
-    final classInfo = _selectedClassInfo;
-    final regularDay = classInfo?['day'] ?? '';
-    final regularTime = classInfo?['classTime'] ?? '';
+    String scheduleText;
+    if (_currentTimetable != null) {
+      scheduleText = 'Every ${_formatSchedule(_currentTimetable)}';
+    } else {
+      final classInfo = _selectedClassInfo;
+      final regularDay = classInfo?['day'] ?? '';
+      final regularTime = classInfo?['classTime'] ?? '';
+      if (regularDay.isNotEmpty && regularTime.isNotEmpty) {
+        scheduleText = 'Every $regularDay, $regularTime';
+      } else {
+        scheduleText = 'No regular schedule set';
+      }
+    }
 
     return Container(
       padding: const EdgeInsets.all(16),
@@ -918,11 +995,7 @@ class _TeacherTimetableChangePageState
                         color: Color(0xFF388E3C))),
                 const SizedBox(height: 4),
                 Text(
-                  regularDay.isNotEmpty && regularTime.isNotEmpty
-                      ? 'Every $regularDay, $regularTime'
-                      : _currentTimetable != null
-                          ? 'Every ${_formatSchedule(_currentTimetable)}'
-                          : 'No regular schedule set',
+                  scheduleText,
                   style: const TextStyle(
                       fontSize: 15, fontWeight: FontWeight.bold),
                 ),
@@ -936,17 +1009,16 @@ class _TeacherTimetableChangePageState
 
   Widget _buildSessionToReplaceDropdown() {
     final upcomingDates = _getUpcomingSessionDates();
-    final classInfo = _selectedClassInfo;
     String originalScheduleText = '';
-    if (classInfo != null) {
-      final day = classInfo['day'] as String? ?? '';
-      final time = classInfo['classTime'] as String? ?? '';
+    if (_currentTimetable != null) {
+      originalScheduleText = 'Every ${_formatSchedule(_currentTimetable)}';
+    } else {
+      final classInfo = _selectedClassInfo;
+      final day = classInfo?['day'] as String? ?? '';
+      final time = classInfo?['classTime'] as String? ?? '';
       if (day.isNotEmpty && time.isNotEmpty) {
         originalScheduleText = 'Every $day, $time';
       }
-    }
-    if (originalScheduleText.isEmpty && _currentTimetable != null) {
-      originalScheduleText = 'Every ${_formatSchedule(_currentTimetable)}';
     }
 
     if (upcomingDates.isEmpty) {

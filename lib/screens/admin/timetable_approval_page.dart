@@ -250,62 +250,186 @@ class _TimetableApprovalPageState extends State<TimetableApprovalPage> {
       decoration: BoxDecoration(
         color: Colors.white,
         borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: Colors.blue.shade100, width: 2),
+        border: Border.all(color: Colors.blue.shade200, width: 2),
         boxShadow: [
-          BoxShadow(color: Colors.black.withOpacity(0.05), blurRadius: 8, offset: const Offset(0, 4)),
+          BoxShadow(
+            color: Colors.black.withOpacity(0.05),
+            blurRadius: 10,
+            offset: const Offset(0, 4),
+          ),
         ],
       ),
       child: Padding(
-        padding: const EdgeInsets.all(16),
+        padding: const EdgeInsets.all(20),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
+            // Header
             Row(
               children: [
-                Icon(Icons.swap_horiz, color: Colors.blue.shade600),
-                const SizedBox(width: 8),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(className, style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
-                      if (subject.isNotEmpty)
-                        Text(subject, style: TextStyle(color: Colors.grey.shade600)),
-                    ],
+                Container(
+                  padding: const EdgeInsets.all(10),
+                  decoration: BoxDecoration(
+                    color: Colors.blue.shade50,
+                    borderRadius: BorderRadius.circular(10),
                   ),
-                ),
-                if (submittedAt != null)
-                  Text(
-                    DateFormat('MMM d, y h:mm a').format(submittedAt),
-                    style: TextStyle(fontSize: 12, color: Colors.grey.shade600),
-                  ),
-              ],
-            ),
-            const SizedBox(height: 12),
-            Text('Teacher: $teacherName', style: TextStyle(color: Colors.grey.shade700)),
-            const SizedBox(height: 12),
-            Text('Current Slot: ${_formatSlotMap(currentSlot)}'),
-            Text('Requested Slot: ${_formatSlotMap(requestedSlot)}'),
-            const SizedBox(height: 12),
-            Text('Reason:', style: TextStyle(color: Colors.grey.shade700, fontWeight: FontWeight.w600)),
-            Text(reason),
-            const SizedBox(height: 16),
-            Row(
-              children: [
-                Expanded(
-                  child: OutlinedButton.icon(
-                    icon: const Icon(Icons.close, color: Colors.red),
-                    label: const Text('Reject', style: TextStyle(color: Colors.red)),
-                    onPressed: () => _showRejectDialog(requestId, data),
+                  child: Icon(
+                    Icons.swap_horiz,
+                    color: Colors.blue.shade700,
+                    size: 24,
                   ),
                 ),
                 const SizedBox(width: 12),
                 Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        subject.isNotEmpty ? '$subject - $className' : className,
+                        style: const TextStyle(
+                          fontSize: 18,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                      const SizedBox(height: 4),
+                      Text(
+                        'Teacher: $teacherName',
+                        style: TextStyle(
+                          fontSize: 14,
+                          color: Colors.grey.shade600,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                  decoration: BoxDecoration(
+                    color: Colors.blue.shade50,
+                    borderRadius: BorderRadius.circular(20),
+                  ),
+                  child: Text(
+                    'Permanent',
+                    style: TextStyle(
+                      color: Colors.blue.shade700,
+                      fontWeight: FontWeight.bold,
+                      fontSize: 12,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+
+            const SizedBox(height: 20),
+            const Divider(),
+
+            // Current Schedule
+            const Text(
+              'Current Schedule:',
+              style: TextStyle(
+                fontSize: 14,
+                fontWeight: FontWeight.w600,
+                color: Colors.black87,
+              ),
+            ),
+            const SizedBox(height: 8),
+            Row(
+              children: [
+                _buildScheduleItem(
+                  Icons.calendar_today,
+                  _getSlotDay(currentSlot),
+                  Colors.grey,
+                ),
+                const SizedBox(width: 16),
+                _buildScheduleItem(
+                  Icons.access_time,
+                  _getSlotTime(currentSlot),
+                  Colors.grey,
+                ),
+              ],
+            ),
+
+            const SizedBox(height: 12),
+            const Text(
+              'Requested Schedule:',
+              style: TextStyle(
+                fontSize: 14,
+                fontWeight: FontWeight.w600,
+                color: Colors.black87,
+              ),
+            ),
+            const SizedBox(height: 8),
+            Row(
+              children: [
+                _buildScheduleItem(
+                  Icons.calendar_today,
+                  _getSlotDay(requestedSlot),
+                  Colors.blue,
+                ),
+                const SizedBox(width: 16),
+                _buildScheduleItem(
+                  Icons.access_time,
+                  _getSlotTime(requestedSlot),
+                  Colors.green,
+                ),
+              ],
+            ),
+
+            if (reason.isNotEmpty) ...[
+              const SizedBox(height: 12),
+              Text(
+                'Reason: $reason',
+                style: TextStyle(fontSize: 13, color: Colors.grey.shade800),
+              ),
+            ],
+
+            if (submittedAt != null) ...[
+              const SizedBox(height: 12),
+              Text(
+                'Submitted: ${DateFormat('MMM d, y h:mm a').format(submittedAt)}',
+                style: TextStyle(
+                  fontSize: 12,
+                  color: Colors.grey.shade600,
+                ),
+              ),
+            ],
+
+            const SizedBox(height: 20),
+            const Divider(),
+
+            // Action Buttons
+            Row(
+              children: [
+                Expanded(
+                  child: OutlinedButton.icon(
+                    onPressed: () => _showRejectDialog(requestId, data),
+                    icon: const Icon(Icons.close, size: 18),
+                    label: const Text('Reject'),
+                    style: OutlinedButton.styleFrom(
+                      foregroundColor: Colors.red,
+                      side: const BorderSide(color: Colors.red),
+                      padding: const EdgeInsets.symmetric(vertical: 12),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(10),
+                      ),
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  flex: 2,
                   child: ElevatedButton.icon(
-                    icon: const Icon(Icons.check),
-                    label: const Text('Approve'),
-                    style: ElevatedButton.styleFrom(backgroundColor: Colors.green),
                     onPressed: () => _approveChangeRequest(requestId, data),
+                    icon: const Icon(Icons.check, size: 18),
+                    label: const Text('Approve'),
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: Colors.green,
+                      foregroundColor: Colors.white,
+                      padding: const EdgeInsets.symmetric(vertical: 12),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(10),
+                      ),
+                    ),
                   ),
                 ),
               ],
@@ -316,14 +440,18 @@ class _TimetableApprovalPageState extends State<TimetableApprovalPage> {
     );
   }
 
-  String _formatSlotMap(Map<String, dynamic>? slot) {
-    if (slot == null) return 'Not scheduled';
+  String _getSlotDay(Map<String, dynamic>? slot) {
+    if (slot == null) return 'Not set';
     final dayIndex = slot['dayOfWeek'] as int? ?? 0;
+    const days = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+    return dayIndex >= 0 && dayIndex < days.length ? days[dayIndex] : 'Unknown';
+  }
+
+  String _getSlotTime(Map<String, dynamic>? slot) {
+    if (slot == null) return '--:-- - --:--';
     final start = slot['startTime'] as String? ?? '--:--';
     final end = slot['endTime'] as String? ?? '--:--';
-    final days = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
-    final dayName = dayIndex >= 0 && dayIndex < days.length ? days[dayIndex] : 'Unknown';
-    return '$dayName • $start - $end';
+    return '$start - $end';
   }
 
   Future<void> _approveChangeRequest(String requestId, Map<String, dynamic> data) async {
@@ -360,6 +488,7 @@ class _TimetableApprovalPageState extends State<TimetableApprovalPage> {
         'day': _formatFullDay(dayIndex),
         'timeStart': startTime,
         'timeEnd': endTime,
+        'classTime': '$startTime - $endTime',
       }).catchError((_) {});
 
       // Update request status

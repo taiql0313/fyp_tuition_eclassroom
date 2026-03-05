@@ -363,28 +363,6 @@ class _TeacherDashboardState extends State<TeacherDashboard> {
                   ),
 
                   const SizedBox(height: 30),
-                  // Recent Activities Section
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                    children: [
-                      const Text("Recent Activities", style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
-                      InkWell(
-                        onTap: () {
-
-                        },
-                        child: const Text(
-                          "View All",
-                          style: TextStyle(
-                            fontSize: 14,
-                            color: Color(0xFF2196F3),
-                            fontWeight: FontWeight.w600,
-                          ),
-                        ),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 15),
-                  _buildRecentActivities(uid),
                 ],
               ),
             ),
