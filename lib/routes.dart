@@ -18,6 +18,7 @@ import 'screens/student/classroom/stu_classroom_dashboard.dart';
 import 'screens/student/classroom/join_classroom_page.dart';
 import 'screens/teacher/timetable/teacher_timetable_page.dart';
 import 'screens/teacher/timetable/teacher_timetable_change_page.dart';
+import 'screens/teacher/timetable/teacher_timetable_view_page.dart';
 import 'screens/student/timetable/student_timetable_page.dart';
 import 'screens/student/quiz/student_answer_quiz_page.dart';
 import 'screens/settings_page.dart';
@@ -43,6 +44,7 @@ class Routes {
   static const String studentClassroomDashboard = '/student-classroom-dashboard';
   static const String joinClassroom = '/join-classroom';
   static const String teacherTimetable = '/teacher-timetable';
+  static const String teacherTimetableView = '/teacher-timetable-view';
   static const String teacherTimetableChange = '/teacher-timetable-change';
   static const String studentTimetable = '/student-timetable';
   static const String studentAnswerQuiz = '/student-answer-quiz';
@@ -110,6 +112,8 @@ class Routes {
         return MaterialPageRoute(builder: (_) => const JoinClassroomPage());
       case teacherTimetable:
         return MaterialPageRoute(builder: (_) => const TeacherTimetablePage());
+      case teacherTimetableView:
+        return MaterialPageRoute(builder: (_) => const TeacherTimetableViewPage());
       case teacherTimetableChange:
         return MaterialPageRoute(builder: (_) => const TeacherTimetableChangePage());
       case studentTimetable:

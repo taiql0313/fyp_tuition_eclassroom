@@ -522,9 +522,8 @@ class AttendanceService {
     }
   }
 
-  /// Get attendance statistics for a student
+  /// Get attendance statistics for a student (one-time)
   Future<Map<String, dynamic>> getStudentStats(String studentId, String classId) async {
-    // First, check for any expired sessions that need to be closed
     await checkAndCloseExpiredSessions();
 
     final records = await _db
@@ -533,13 +532,35 @@ class AttendanceService {
         .where('classId', isEqualTo: classId)
         .get();
 
+    return _computeStats(records.docs);
+  }
+
+  /// Real-time stream of attendance statistics for a student in a class
+  Stream<Map<String, dynamic>> streamStudentStats(String studentId, String classId) {
+    return _db
+        .collection(_recordsCol)
+        .where('studentId', isEqualTo: studentId)
+        .where('classId', isEqualTo: classId)
+        .snapshots()
+        .map((snapshot) => _computeStats(snapshot.docs));
+  }
+
+  /// Real-time stream of attendance statistics across all classes for a student
+  Stream<Map<String, dynamic>> streamStudentOverallStats(String studentId) {
+    return _db
+        .collection(_recordsCol)
+        .where('studentId', isEqualTo: studentId)
+        .snapshots()
+        .map((snapshot) => _computeStats(snapshot.docs));
+  }
+
+  Map<String, dynamic> _computeStats(List<QueryDocumentSnapshot<Map<String, dynamic>>> docs) {
     int present = 0;
     int absent = 0;
     int excused = 0;
 
-    for (var doc in records.docs) {
-      final data = doc.data();
-      final status = data['status'] ?? 'absent';
+    for (var doc in docs) {
+      final status = doc.data()['status'] ?? 'absent';
       if (status == 'present') {
         present++;
       } else if (status == 'excused') {
@@ -550,8 +571,6 @@ class AttendanceService {
     }
 
     final total = present + absent + excused;
-    // Attendance rate: (present + excused) / total * 100
-    // Excused absences count as present for attendance percentage
     final rate = total > 0 ? (((present + excused) / total) * 100).round() : 0;
 
     return {

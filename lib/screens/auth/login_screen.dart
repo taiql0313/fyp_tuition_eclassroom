@@ -86,7 +86,11 @@ class _LoginScreenState extends State<LoginScreen> {
                   child: Column(
                     mainAxisSize: MainAxisSize.min,
                     children: [
-                      const FlutterLogo(size: 90),
+                      Image.asset(
+                        'assets/images/logo.png',
+                        width: 90,
+                        height: 90,
+                      ),
                       const SizedBox(height: 10),
                       const Text(
                         "Tuition E-Classroom System",

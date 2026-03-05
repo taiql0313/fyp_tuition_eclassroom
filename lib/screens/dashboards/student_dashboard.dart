@@ -8,6 +8,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import '../../routes.dart';
 import '../../services/auth_service.dart';
 import '../../services/announcement_service.dart';
+import '../../services/attendance_service.dart';
 
 // Page Imports
 import '../helpnsupport_page.dart';
@@ -243,13 +244,14 @@ class _StudentDashboardState extends State<StudentDashboard> {
   Widget _buildAttendanceCard(String userId) {
     final theme = Theme.of(context);
     const color = Color(0xFF2E7D32);
+    final attendanceService = AttendanceService();
 
-    return FutureBuilder<Map<String, dynamic>>(
-      future: _calculateAttendanceStats(userId),
+    return StreamBuilder<Map<String, dynamic>>(
+      stream: attendanceService.streamStudentOverallStats(userId),
       builder: (context, snapshot) {
-        final stats = snapshot.data ?? {'percentage': 0.0, 'present': 0, 'total': 0};
-        final percentage = stats['percentage'] as double;
-        final present = stats['present'] as int;
+        final stats = snapshot.data ?? {'rate': 0, 'present': 0, 'excused': 0, 'total': 0};
+        final rate = (stats['rate'] as int).toDouble();
+        final present = (stats['present'] as int) + (stats['excused'] as int);
         final total = stats['total'] as int;
 
         return Container(
@@ -276,7 +278,7 @@ class _StudentDashboardState extends State<StudentDashboard> {
                     decoration: BoxDecoration(color: theme.dividerColor, borderRadius: BorderRadius.circular(2)),
                     child: FractionallySizedBox(
                       alignment: Alignment.centerLeft,
-                      widthFactor: percentage / 100,
+                      widthFactor: rate / 100,
                       child: Container(decoration: BoxDecoration(color: color, borderRadius: BorderRadius.circular(2))),
                     ),
                   ),
@@ -284,7 +286,7 @@ class _StudentDashboardState extends State<StudentDashboard> {
               ),
               const SizedBox(height: 12),
               Text(
-                '${percentage.toStringAsFixed(0)}%',
+                '${rate.toStringAsFixed(0)}%',
                 style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold, color: theme.colorScheme.onSurface),
               ),
               const SizedBox(height: 4),
@@ -297,51 +299,6 @@ class _StudentDashboardState extends State<StudentDashboard> {
         );
       },
     );
-  }
-
-  Future<Map<String, dynamic>> _calculateAttendanceStats(String userId) async {
-    try {
-      // Get student's enrolled classes
-      final userDoc = await FirebaseFirestore.instance.collection('users').doc(userId).get();
-      final classIds = List<String>.from(userDoc.data()?['classIds'] ?? []);
-
-      if (classIds.isEmpty) {
-        return {'percentage': 0.0, 'present': 0, 'total': 0};
-      }
-
-      // Get all attendance sessions for student's classes
-      int totalSessions = 0;
-      int attendedSessions = 0;
-
-      for (var classId in classIds) {
-        // Get sessions for this class
-        final sessionsSnapshot = await FirebaseFirestore.instance
-            .collection('attendance_sessions')
-            .where('classId', isEqualTo: classId)
-            .get();
-
-        for (var session in sessionsSnapshot.docs) {
-          totalSessions++;
-          
-          // Check if student attended this session
-          final recordSnapshot = await FirebaseFirestore.instance
-              .collection('attendance_records')
-              .where('sessionId', isEqualTo: session.id)
-              .where('studentId', isEqualTo: userId)
-              .get();
-
-          if (recordSnapshot.docs.isNotEmpty) {
-            attendedSessions++;
-          }
-        }
-      }
-
-      final percentage = totalSessions > 0 ? (attendedSessions / totalSessions) * 100 : 0.0;
-      return {'percentage': percentage, 'present': attendedSessions, 'total': totalSessions};
-    } catch (e) {
-      print('Error calculating attendance: $e');
-      return {'percentage': 0.0, 'present': 0, 'total': 0};
-    }
   }
 
   Widget _buildAssignmentsCard(String userId) {

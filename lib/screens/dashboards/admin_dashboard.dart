@@ -143,7 +143,7 @@ class AdminDashboard extends StatelessWidget {
                   children: [
                     Expanded(child: _UsersStatCard()),
                     const SizedBox(width: 15),
-                    Expanded(child: _DailyRevenueStatCard()),
+                    Expanded(child: _TotalRevenueStatCard()),
                   ],
                 ),
                 const SizedBox(height: 15),
@@ -151,8 +151,7 @@ class AdminDashboard extends StatelessWidget {
                   children: [
                     Expanded(child: _TotalCoursesStatCard()),
                     const SizedBox(width: 15),
-                    // System Health card removed as per user request
-                    const Expanded(child: SizedBox()),
+                    Expanded(child: _PendingApprovalsStatCard()),
                   ],
                 ),
 
@@ -196,7 +195,6 @@ class AdminDashboard extends StatelessWidget {
                     }),
 
                     _adminTile(context, 'Settings', Icons.settings_outlined, Colors.grey),
-                    _adminTile(context, 'Monitoring', Icons.speed, Colors.redAccent),
 
                     // TIMETABLE APPROVAL TILE with badge
                     StreamBuilder<QuerySnapshot>(
@@ -316,25 +314,26 @@ class AdminDashboard extends StatelessWidget {
         },
         child: Stack(
           children: [
-            Column(
-              mainAxisAlignment: MainAxisAlignment.center,
-              crossAxisAlignment: CrossAxisAlignment.center,
-              children: [
-                Container(
-                  padding: const EdgeInsets.all(12),
-                  decoration: BoxDecoration(
-                    color: color.withOpacity(0.2),
-                    shape: BoxShape.circle,
+            Center(
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  Container(
+                    padding: const EdgeInsets.all(12),
+                    decoration: BoxDecoration(
+                      color: color.withOpacity(0.2),
+                      shape: BoxShape.circle,
+                    ),
+                    child: Icon(icon, size: 30, color: color),
                   ),
-                  child: Icon(icon, size: 30, color: color),
-                ),
-                const SizedBox(height: 12),
-                Text(
-                  title,
-                  style: TextStyle(fontWeight: FontWeight.w600, fontSize: 14, color: theme.colorScheme.onSurface),
-                  textAlign: TextAlign.center,
-                ),
-              ],
+                  const SizedBox(height: 12),
+                  Text(
+                    title,
+                    style: TextStyle(fontWeight: FontWeight.w600, fontSize: 14, color: theme.colorScheme.onSurface),
+                    textAlign: TextAlign.center,
+                  ),
+                ],
+              ),
             ),
             if (badgeCount > 0)
               Positioned(
@@ -381,6 +380,7 @@ class _StatCard extends StatelessWidget {
         boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.15), blurRadius: 10)],
       ),
       child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
         crossAxisAlignment: CrossAxisAlignment.center,
         children: [
           Container(
@@ -436,20 +436,14 @@ class _UsersStatCard extends StatelessWidget {
   }
 }
 
-// Daily Revenue Stat Card with Real Data
-class _DailyRevenueStatCard extends StatelessWidget {
+// Total Revenue Stat Card - same logic as Payment Management
+class _TotalRevenueStatCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
-    final today = DateTime.now();
-    final startOfDay = DateTime(today.year, today.month, today.day);
-    final endOfDay = startOfDay.add(const Duration(days: 1));
-
     return StreamBuilder<QuerySnapshot>(
       stream: FirebaseFirestore.instance
-          .collection('payment_transactions')
-          .where('status', isEqualTo: 'completed')
-          .where('completedAt', isGreaterThanOrEqualTo: Timestamp.fromDate(startOfDay))
-          .where('completedAt', isLessThan: Timestamp.fromDate(endOfDay))
+          .collection('invoices')
+          .where('status', isEqualTo: 'paid')
           .snapshots(),
       builder: (context, snapshot) {
         double totalRevenue = 0.0;
@@ -457,7 +451,7 @@ class _DailyRevenueStatCard extends StatelessWidget {
         if (snapshot.hasData) {
           for (var doc in snapshot.data!.docs) {
             final data = doc.data() as Map<String, dynamic>;
-            final amount = (data['amount'] as num?)?.toDouble() ?? 0.0;
+            final amount = (data['totalAmount'] as num?)?.toDouble() ?? 0.0;
             totalRevenue += amount;
           }
         }
@@ -465,7 +459,7 @@ class _DailyRevenueStatCard extends StatelessWidget {
         final formattedRevenue = _formatCurrency(totalRevenue);
         
         return _StatCard(
-          label: "Daily Revenue",
+          label: "Total Revenue",
           value: formattedRevenue,
           icon: Icons.attach_money,
           color: Colors.green,
@@ -475,27 +469,59 @@ class _DailyRevenueStatCard extends StatelessWidget {
   }
 
   String _formatCurrency(double amount) {
-    if (amount >= 1000) {
-      return 'RM ${(amount / 1000).toStringAsFixed(1)}k';
-    }
-    return 'RM ${amount.toStringAsFixed(0)}';
+    return 'RM ${amount.toStringAsFixed(2)}';
   }
 }
 
-// Total Courses Stat Card with Real Data
+// Total Classes Stat Card with Real Data
 class _TotalCoursesStatCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return StreamBuilder<QuerySnapshot>(
-      stream: FirebaseFirestore.instance.collection('classrooms').snapshots(),
+      stream: FirebaseFirestore.instance
+          .collection('classrooms')
+          .snapshots(),
       builder: (context, snapshot) {
         final courseCount = snapshot.hasData ? snapshot.data!.docs.length : 0;
         
         return _StatCard(
-          label: "Total Courses",
+          label: "Total Classes",
           value: courseCount.toString(),
           icon: Icons.book_outlined,
           color: Colors.purple,
+        );
+      },
+    );
+  }
+}
+
+// Pending Approvals Stat Card with Real Data
+class _PendingApprovalsStatCard extends StatelessWidget {
+  @override
+  Widget build(BuildContext context) {
+    return StreamBuilder<QuerySnapshot>(
+      stream: FirebaseFirestore.instance
+          .collection('timetables')
+          .where('status', isEqualTo: 'pending_approval')
+          .snapshots(),
+      builder: (context, timetableSnap) {
+        return StreamBuilder<QuerySnapshot>(
+          stream: FirebaseFirestore.instance
+              .collection('absence_documents')
+              .where('status', isEqualTo: 'pending')
+              .snapshots(),
+          builder: (context, absenceSnap) {
+            final timetableCount = timetableSnap.hasData ? timetableSnap.data!.docs.length : 0;
+            final absenceCount = absenceSnap.hasData ? absenceSnap.data!.docs.length : 0;
+            final total = timetableCount + absenceCount;
+
+            return _StatCard(
+              label: "Pending Approvals",
+              value: total.toString(),
+              icon: Icons.pending_actions,
+              color: Colors.orange,
+            );
+          },
         );
       },
     );
