@@ -38,31 +38,39 @@ class _ReportsPageState extends State<ReportsPage> {
     setState(() => _loading = true);
 
     try {
-      final now = DateTime.now();
-      final startOfMonth = DateTime(now.year, now.month, 1);
-      final endOfMonth = DateTime(now.year, now.month + 1, 0, 23, 59, 59);
+      final now = TimezoneHelper.getMalaysiaTime();
+      final startOfMonth =
+          TimezoneHelper.createMalaysiaDateTime(now.year, now.month, 1, 0, 0);
+      final endOfMonth = TimezoneHelper.createMalaysiaDateTime(
+              now.year, now.month + 1, 1, 0, 0)
+          .subtract(const Duration(seconds: 1));
 
-      // Get all invoices
+      // Get all invoices (for outstanding fees)
       final invoicesSnapshot = await _db.collection('invoices').get();
-      double revenue = 0;
       double outstanding = 0;
 
       for (var doc in invoicesSnapshot.docs) {
         final data = doc.data();
         final amount = (data['totalAmount'] as num?)?.toDouble() ?? 0;
         final status = data['status'] as String? ?? 'pending';
-        final paidAt = (data['paidAt'] as Timestamp?)?.toDate();
 
-        if (status == 'paid') {
-          // Check if paid this month
-          if (paidAt != null &&
-              paidAt.isAfter(startOfMonth) &&
-              paidAt.isBefore(endOfMonth)) {
-            revenue += amount;
-          }
-        } else if (status == 'pending' || status == 'overdue') {
+        if (status == 'pending' || status == 'overdue') {
           outstanding += amount;
         }
+      }
+
+      // Get all payment transactions (for revenue, consistent with other pages)
+      final txSnapshot = await _db
+          .collection('payment_transactions')
+          .where('status', isEqualTo: 'completed')
+          .get();
+
+      double revenue = 0;
+      for (var doc in txSnapshot.docs) {
+        final data = doc.data();
+        final amount = (data['amount'] as num?)?.toDouble() ?? 0;
+        // All-time total revenue (no month filter)
+        revenue += amount;
       }
 
       // Get active students count
@@ -161,7 +169,7 @@ class _ReportsPageState extends State<ReportsPage> {
                 headers: <String>['Metric', 'Value'],
                 data: <List<String>>[
                   [
-                    'Total Revenue (${DateFormat('MMM').format(now)})',
+                    'Total Revenue (All Time)',
                     'RM ${_totalRevenue.toStringAsFixed(2)}'
                   ],
                   ['Outstanding Fees', 'RM ${_outstandingFees.toStringAsFixed(2)}'],
@@ -355,9 +363,9 @@ class _ReportsPageState extends State<ReportsPage> {
               Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text(
-                    "Revenue (${DateFormat('MMM yyyy').format(DateTime.now())})",
-                    style: const TextStyle(color: Colors.white70, fontSize: 14),
+                  const Text(
+                    "Total Revenue",
+                    style: TextStyle(color: Colors.white70, fontSize: 14),
                   ),
                   const SizedBox(height: 8),
                   Text(

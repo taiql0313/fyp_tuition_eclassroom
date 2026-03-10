@@ -315,61 +315,102 @@ class AuthService extends ChangeNotifier {
     required String password,
   }) async {
     try {
-      final clientContext = await _getClientContext();
       await _auth.signInWithEmailAndPassword(email: email, password: password);
       final user = _auth.currentUser;
       if (user != null) {
         await _updateUserStatus(user.uid, isOnline: true, updateLogin: true);
-        final info = await _getUserInfo(user.uid, fallback: user.email);
-        await _logSystemEvent(
-          type: 'Info',
-          category: 'Authentication & Access',
-          action: 'User Login',
-          user: info['name'] ?? user.email ?? user.uid,
-          role: info['role'] ?? 'unknown',
-          userId: user.uid,
-          details: 'Login successful.',
-          success: true,
-          clientContext: clientContext,
-        );
       }
       notifyListeners();
+
+      // Log in background so login feels instant
+      if (user != null) {
+        _logSignInInBackground(user.uid, user.email);
+      }
     } catch (e) {
-      final clientContext = await _getClientContext();
+      // Log failed attempt in background so the error shows instantly
+      _logFailedLoginInBackground(email, e.toString());
+      rethrow;
+    }
+  }
+
+  void _logSignInInBackground(String uid, String? email) async {
+    try {
+      final info = await _getUserInfo(uid, fallback: email)
+          .timeout(const Duration(seconds: 3), onTimeout: () => <String, String>{});
+      final clientContext = await _getClientContext()
+          .timeout(const Duration(seconds: 5), onTimeout: () => <String, String>{});
+      await _logSystemEvent(
+        type: 'Info',
+        category: 'Authentication & Access',
+        action: 'User Login',
+        user: info['name'] ?? email ?? uid,
+        role: info['role'] ?? 'unknown',
+        userId: uid,
+        details: 'Login successful.',
+        success: true,
+        clientContext: clientContext,
+      ).timeout(const Duration(seconds: 3));
+    } catch (e) {
+      print('[AuthService] Background login logging failed: $e');
+    }
+  }
+
+  void _logFailedLoginInBackground(String email, String error) async {
+    try {
+      final clientContext = await _getClientContext()
+          .timeout(const Duration(seconds: 5), onTimeout: () => <String, String>{});
       await _logSystemEvent(
         type: 'Error',
         category: 'Authentication & Access',
         action: 'Failed Login Attempt',
         user: email,
         role: 'unknown',
-        details: e.toString(),
+        details: error,
         success: false,
         clientContext: clientContext,
-      );
-      rethrow;
+      ).timeout(const Duration(seconds: 3));
+    } catch (e) {
+      print('[AuthService] Background failed-login logging failed: $e');
     }
   }
 
   Future<void> signOut() async {
     final user = _auth.currentUser;
-    if (user != null) {
-      final info = await _getUserInfo(user.uid, fallback: user.email);
-      final clientContext = await _getClientContext();
-      await _updateUserStatus(user.uid, isOnline: false, updateLogout: true);
+    final uid = user?.uid;
+    final email = user?.email;
+
+    // Sign out immediately so the UI responds right away
+    await _auth.signOut();
+    notifyListeners();
+
+    // Log the event in the background (fire-and-forget)
+    if (uid != null) {
+      _logSignOutInBackground(uid, email);
+    }
+  }
+
+  void _logSignOutInBackground(String uid, String? email) async {
+    try {
+      final info = await _getUserInfo(uid, fallback: email)
+          .timeout(const Duration(seconds: 3), onTimeout: () => <String, String>{});
+      final clientContext = await _getClientContext()
+          .timeout(const Duration(seconds: 5), onTimeout: () => <String, String>{});
+      await _updateUserStatus(uid, isOnline: false, updateLogout: true)
+          .timeout(const Duration(seconds: 3));
       await _logSystemEvent(
         type: 'Info',
         category: 'Authentication & Access',
         action: 'User Logout',
-        user: info['name'] ?? user.email ?? user.uid,
+        user: info['name'] ?? email ?? uid,
         role: info['role'] ?? 'unknown',
-        userId: user.uid,
+        userId: uid,
         details: 'Logout successful.',
         success: true,
         clientContext: clientContext,
-      );
+      ).timeout(const Duration(seconds: 3));
+    } catch (e) {
+      print('[AuthService] Background logout logging failed: $e');
     }
-    await _auth.signOut();
-    notifyListeners();
   }
 
   Future<void> sendPasswordReset({required String email}) async {

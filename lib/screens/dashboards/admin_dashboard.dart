@@ -440,24 +440,26 @@ class _UsersStatCard extends StatelessWidget {
 class _TotalRevenueStatCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
+    // Keep this consistent with Payment Management & Reports pages:
+    // sum of all completed payment_transactions (all time).
     return StreamBuilder<QuerySnapshot>(
       stream: FirebaseFirestore.instance
-          .collection('invoices')
-          .where('status', isEqualTo: 'paid')
+          .collection('payment_transactions')
+          .where('status', isEqualTo: 'completed')
           .snapshots(),
       builder: (context, snapshot) {
         double totalRevenue = 0.0;
-        
+
         if (snapshot.hasData) {
           for (var doc in snapshot.data!.docs) {
             final data = doc.data() as Map<String, dynamic>;
-            final amount = (data['totalAmount'] as num?)?.toDouble() ?? 0.0;
+            final amount = (data['amount'] as num?)?.toDouble() ?? 0.0;
             totalRevenue += amount;
           }
         }
 
         final formattedRevenue = _formatCurrency(totalRevenue);
-        
+
         return _StatCard(
           label: "Total Revenue",
           value: formattedRevenue,

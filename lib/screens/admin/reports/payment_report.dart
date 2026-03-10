@@ -41,6 +41,8 @@ class _PaymentReportPageState extends State<PaymentReportPage> {
   double _paypalAmount = 0;
   int _manualCount = 0;
   double _manualAmount = 0;
+  int _blockchainCount = 0;
+  double _blockchainAmount = 0;
 
   @override
   void initState() {
@@ -91,21 +93,27 @@ class _PaymentReportPageState extends State<PaymentReportPage> {
       double paypalAmount = 0;
       int manualCount = 0;
       double manualAmount = 0;
+      int blockchainCount = 0;
+      double blockchainAmount = 0;
 
+      // Outstanding fees are based on unpaid invoices
       for (var inv in invoices) {
-        if (inv.status == 'paid') {
-          totalRevenue += inv.totalAmount;
-
-          // Check if paid this month
-          if (inv.paidAt != null) {
-            final paidAtMalaysia = TimezoneHelper.toMalaysiaTime(inv.paidAt!);
-            if (!paidAtMalaysia.isBefore(startOfMonth) &&
-                !paidAtMalaysia.isAfter(endOfMonth)) {
-              collectedThisMonth += inv.totalAmount;
-            }
-          }
-        } else if (inv.status == 'pending' || inv.status == 'overdue') {
+        if (inv.status == 'pending' || inv.status == 'overdue') {
           outstanding += inv.totalAmount;
+        }
+      }
+      
+      // Total revenue and collected-this-month are based on completed transactions
+      for (var txn in transactions) {
+        if (txn.status == 'completed') {
+          totalRevenue += txn.amount;
+
+          final paidAt = txn.completedAt ?? txn.createdAt;
+          final paidAtMalaysia = TimezoneHelper.toMalaysiaTime(paidAt);
+          if (!paidAtMalaysia.isBefore(startOfMonth) &&
+              !paidAtMalaysia.isAfter(endOfMonth)) {
+            collectedThisMonth += txn.amount;
+          }
         }
       }
       
@@ -118,6 +126,9 @@ class _PaymentReportPageState extends State<PaymentReportPage> {
           } else if (txn.paymentMethod == 'manual' || txn.paymentMethod == 'cash') {
             manualCount++;
             manualAmount += txn.amount;
+          } else if (txn.paymentMethod == 'blockchain') {
+            blockchainCount++;
+            blockchainAmount += txn.amount;
           }
         }
       }
@@ -136,6 +147,8 @@ class _PaymentReportPageState extends State<PaymentReportPage> {
         _paypalAmount = paypalAmount;
         _manualCount = manualCount;
         _manualAmount = manualAmount;
+        _blockchainCount = blockchainCount;
+        _blockchainAmount = blockchainAmount;
         _loading = false;
       });
     } catch (e) {
@@ -401,7 +414,7 @@ class _PaymentReportPageState extends State<PaymentReportPage> {
                         const SizedBox(width: 12),
                         Expanded(
                           child: _buildFinanceStat(
-                            "Collected",
+                            "Collected (This Month)",
                             'RM ${_collectedThisMonth.toStringAsFixed(2)}',
                             Colors.blue,
                           ),
@@ -698,9 +711,10 @@ class _PaymentReportPageState extends State<PaymentReportPage> {
   }
 
   Widget _buildPaymentMethodBreakdown() {
-    final totalCount = _paypalCount + _manualCount;
+    final totalCount = _paypalCount + _manualCount + _blockchainCount;
     final paypalPct = totalCount > 0 ? (_paypalCount / totalCount * 100).round() : 0;
     final manualPct = totalCount > 0 ? (_manualCount / totalCount * 100).round() : 0;
+    final blockchainPct = totalCount > 0 ? (_blockchainCount / totalCount * 100).round() : 0;
 
     return Container(
       padding: const EdgeInsets.all(20),
@@ -738,6 +752,17 @@ class _PaymentReportPageState extends State<PaymentReportPage> {
             amount: _paypalAmount,
             percentage: paypalPct,
             color: Colors.blue,
+          ),
+          const SizedBox(height: 12),
+          
+          // Blockchain
+          _buildMethodRow(
+            icon: Icons.currency_bitcoin,
+            label: 'Blockchain',
+            count: _blockchainCount,
+            amount: _blockchainAmount,
+            percentage: blockchainPct,
+            color: Colors.deepPurple,
           ),
           const SizedBox(height: 12),
           

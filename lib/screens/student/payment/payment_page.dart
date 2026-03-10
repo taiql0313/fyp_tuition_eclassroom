@@ -5,6 +5,7 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:fyp_tuition_eclassroom/services/payment_service.dart';
 import 'package:fyp_tuition_eclassroom/services/email_service.dart';
+import 'package:fyp_tuition_eclassroom/services/blockchain_payment_service.dart';
 import 'package:fyp_tuition_eclassroom/models/payment_models.dart';
 import 'payment_history_page.dart';
 import 'paypal_webview_page.dart';
@@ -18,6 +19,7 @@ class PaymentPage extends StatefulWidget {
 
 class _PaymentPageState extends State<PaymentPage> {
   final PaymentService _paymentService = PaymentService();
+  final BlockchainPaymentService _blockchainService = BlockchainPaymentService();
   final FirebaseAuth _auth = FirebaseAuth.instance;
   double? _outstandingBalance;
   Invoice? _nextDueInvoice;
@@ -70,8 +72,79 @@ class _PaymentPageState extends State<PaymentPage> {
   }
 
   Future<void> _handlePayNow(Invoice invoice) async {
+    final method = await showModalBottomSheet<String>(
+      context: context,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (context) => Padding(
+        padding: const EdgeInsets.all(24),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text(
+              "Choose Payment Method",
+              style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
+            ),
+            const SizedBox(height: 8),
+            Text(
+              "Amount: RM ${invoice.totalAmount.toStringAsFixed(2)}",
+              style: TextStyle(fontSize: 14, color: Colors.grey[600]),
+            ),
+            const SizedBox(height: 20),
+            ListTile(
+              leading: Container(
+                padding: const EdgeInsets.all(10),
+                decoration: BoxDecoration(
+                  color: Colors.blue.withOpacity(0.1),
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: const Icon(Icons.paypal, color: Colors.blue, size: 28),
+              ),
+              title: const Text("PayPal", style: TextStyle(fontWeight: FontWeight.bold)),
+              subtitle: Text(
+                "~USD ${_paymentService.convertMyrToUsd(invoice.totalAmount).toStringAsFixed(2)}",
+                style: TextStyle(color: Colors.grey[600], fontSize: 12),
+              ),
+              trailing: const Icon(Icons.arrow_forward_ios, size: 16),
+              onTap: () => Navigator.pop(context, 'paypal'),
+            ),
+            const Divider(),
+            ListTile(
+              leading: Container(
+                padding: const EdgeInsets.all(10),
+                decoration: BoxDecoration(
+                  color: Colors.orange.withOpacity(0.1),
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: const Icon(Icons.currency_bitcoin, color: Colors.orange, size: 28),
+              ),
+              title: const Text("Blockchain (ETH)", style: TextStyle(fontWeight: FontWeight.bold)),
+              subtitle: Text(
+                "~${_blockchainService.convertMyrToEth(invoice.totalAmount).toStringAsFixed(6)} ETH via Ganache",
+                style: TextStyle(color: Colors.grey[600], fontSize: 12),
+              ),
+              trailing: const Icon(Icons.arrow_forward_ios, size: 16),
+              onTap: () => Navigator.pop(context, 'blockchain'),
+            ),
+            const SizedBox(height: 12),
+          ],
+        ),
+      ),
+    );
+
+    if (method == null || !mounted) return;
+
+    if (method == 'paypal') {
+      _handlePayPalPayment(invoice);
+    } else if (method == 'blockchain') {
+      _handleBlockchainPayment(invoice);
+    }
+  }
+
+  Future<void> _handlePayPalPayment(Invoice invoice) async {
     try {
-      // Show loading
       showDialog(
         context: context,
         barrierDismissible: false,
@@ -92,7 +165,6 @@ class _PaymentPageState extends State<PaymentPage> {
         ),
       );
 
-      // Create PayPal order
       final user = _auth.currentUser;
       if (user == null) return;
 
@@ -104,7 +176,7 @@ class _PaymentPageState extends State<PaymentPage> {
       );
 
       if (!mounted) return;
-      Navigator.pop(context); // Close loading dialog
+      Navigator.pop(context);
 
       final approvalUrl = orderData['approvalUrl'] as String;
       final createdOrderId = orderData['orderId'] as String;
@@ -120,7 +192,6 @@ class _PaymentPageState extends State<PaymentPage> {
         return;
       }
 
-      // Open PayPal in an in-app WebView so we can intercept the redirect
       final result = await Navigator.push(
         context,
         MaterialPageRoute(
@@ -133,7 +204,6 @@ class _PaymentPageState extends State<PaymentPage> {
       if (result is Map && result['status'] == 'success') {
         final orderId = (result['orderId'] as String?) ?? createdOrderId;
 
-        // Show loading while verifying
         showDialog(
           context: context,
           barrierDismissible: false,
@@ -163,7 +233,7 @@ class _PaymentPageState extends State<PaymentPage> {
           );
 
           if (!mounted) return;
-          Navigator.pop(context); // Close loading
+          Navigator.pop(context);
 
           ScaffoldMessenger.of(context).showSnackBar(
             const SnackBar(
@@ -173,13 +243,11 @@ class _PaymentPageState extends State<PaymentPage> {
             ),
           );
 
-          // Send receipt email in background (non-blocking)
           _sendReceiptEmail(orderId);
-
           _loadPaymentData();
         } catch (e) {
           if (!mounted) return;
-          Navigator.pop(context); // Close loading
+          Navigator.pop(context);
 
           showDialog(
             context: context,
@@ -198,7 +266,6 @@ class _PaymentPageState extends State<PaymentPage> {
           );
         }
       } else {
-        // User cancelled payment in PayPal
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
             content: Text("Payment was cancelled."),
@@ -208,13 +275,36 @@ class _PaymentPageState extends State<PaymentPage> {
       }
     } catch (e) {
       if (!mounted) return;
-      Navigator.pop(context); // Close loading dialog if still open
+      Navigator.pop(context);
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text("Error: ${e.toString()}"),
           backgroundColor: Colors.red,
         ),
       );
+    }
+  }
+
+  Future<void> _handleBlockchainPayment(Invoice invoice) async {
+    final result = await Navigator.push<bool>(
+      context,
+      MaterialPageRoute(
+        builder: (_) => _BlockchainPaymentPage(
+          invoice: invoice,
+          blockchainService: _blockchainService,
+        ),
+      ),
+    );
+
+    if (result == true && mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text("Blockchain payment completed successfully!"),
+          backgroundColor: Colors.green,
+          duration: Duration(seconds: 4),
+        ),
+      );
+      _loadPaymentData();
     }
   }
 
@@ -331,9 +421,15 @@ class _PaymentPageState extends State<PaymentPage> {
                         if (usdAmount != null)
                           Padding(
                             padding: const EdgeInsets.only(top: 12),
-                            child: Text(
-                              "PayPal charges in USD: ~USD ${usdAmount.toStringAsFixed(2)}",
-                              style: const TextStyle(color: Colors.white70, fontSize: 12),
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(
+                                  "PayPal: ~USD ${usdAmount.toStringAsFixed(2)}  |  "
+                                  "ETH: ~${_blockchainService.convertMyrToEth(_nextDueInvoice!.totalAmount).toStringAsFixed(6)} ETH",
+                                  style: const TextStyle(color: Colors.white70, fontSize: 12),
+                                ),
+                              ],
                             ),
                           ),
                       ],
@@ -664,6 +760,394 @@ class _InvoicesPage extends StatelessWidget {
             ),
           ),
         ],
+      ),
+    );
+  }
+}
+
+class _BlockchainPaymentPage extends StatefulWidget {
+  final Invoice invoice;
+  final BlockchainPaymentService blockchainService;
+
+  const _BlockchainPaymentPage({
+    required this.invoice,
+    required this.blockchainService,
+  });
+
+  @override
+  State<_BlockchainPaymentPage> createState() => _BlockchainPaymentPageState();
+}
+
+class _BlockchainPaymentPageState extends State<_BlockchainPaymentPage> {
+  final _formKey = GlobalKey<FormState>();
+  final _addressController = TextEditingController();
+  final _privateKeyController = TextEditingController();
+  bool _isProcessing = false;
+  bool _obscureKey = true;
+  String? _walletBalance;
+
+  @override
+  void dispose() {
+    _addressController.dispose();
+    _privateKeyController.dispose();
+    super.dispose();
+  }
+
+  Future<void> _checkBalance() async {
+    final address = _addressController.text.trim();
+    if (address.isEmpty || !address.startsWith('0x') || address.length != 42) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text("Please enter a valid Ethereum address"),
+          backgroundColor: Colors.red,
+        ),
+      );
+      return;
+    }
+
+    try {
+      final balance = await widget.blockchainService.getBalance(address);
+      final ethBalance = balance.getInWei / BigInt.from(10).pow(18);
+      setState(() {
+        _walletBalance = ethBalance.toStringAsFixed(4);
+      });
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text("Failed to fetch balance: ${e.toString().replaceFirst('Exception: ', '')}"),
+          backgroundColor: Colors.red,
+        ),
+      );
+    }
+  }
+
+  Future<void> _processPayment() async {
+    if (!_formKey.currentState!.validate()) return;
+
+    final user = FirebaseAuth.instance.currentUser;
+    if (user == null) return;
+
+    final ethAmount = widget.blockchainService.convertMyrToEth(widget.invoice.totalAmount);
+
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text("Confirm Payment"),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text("Amount: RM ${widget.invoice.totalAmount.toStringAsFixed(2)}"),
+            const SizedBox(height: 4),
+            Text("ETH Equivalent: ${ethAmount.toStringAsFixed(6)} ETH"),
+            const SizedBox(height: 4),
+            Text(
+              "From: ${_addressController.text.trim().substring(0, 10)}...${_addressController.text.trim().substring(36)}",
+            ),
+            const SizedBox(height: 4),
+            Text(
+              "To: ${BlockchainPaymentService.receiverAddress.substring(0, 10)}...${BlockchainPaymentService.receiverAddress.substring(36)}",
+            ),
+            const SizedBox(height: 12),
+            Text(
+              "This transaction cannot be reversed.",
+              style: TextStyle(color: Colors.red[700], fontSize: 12, fontWeight: FontWeight.bold),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text("Cancel"),
+          ),
+          ElevatedButton(
+            onPressed: () => Navigator.pop(context, true),
+            style: ElevatedButton.styleFrom(backgroundColor: Colors.orange),
+            child: const Text("Confirm & Pay"),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmed != true || !mounted) return;
+
+    setState(() => _isProcessing = true);
+
+    try {
+      final result = await widget.blockchainService.processBlockchainPayment(
+        invoiceId: widget.invoice.id,
+        amountMyr: widget.invoice.totalAmount,
+        studentId: user.uid,
+        studentName: user.displayName ?? 'Student',
+        senderAddress: _addressController.text.trim(),
+        privateKey: _privateKeyController.text.trim(),
+      );
+
+      if (!mounted) return;
+
+      await showDialog(
+        context: context,
+        barrierDismissible: false,
+        builder: (context) => AlertDialog(
+          icon: const Icon(Icons.check_circle, color: Colors.green, size: 48),
+          title: const Text("Payment Successful!"),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text("Amount: ${result['ethAmount']} ETH"),
+              const SizedBox(height: 8),
+              const Text("Transaction Hash:", style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12)),
+              const SizedBox(height: 4),
+              SelectableText(
+                result['txHash'] as String,
+                style: const TextStyle(fontSize: 11, fontFamily: 'monospace'),
+              ),
+            ],
+          ),
+          actions: [
+            ElevatedButton(
+              onPressed: () => Navigator.pop(context),
+              child: const Text("Done"),
+            ),
+          ],
+        ),
+      );
+
+      if (mounted) Navigator.pop(context, true);
+    } catch (e) {
+      if (!mounted) return;
+      setState(() => _isProcessing = false);
+      showDialog(
+        context: context,
+        builder: (context) => AlertDialog(
+          title: const Text("Payment Failed"),
+          content: Text(e.toString().replaceFirst('Exception: ', '')),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context),
+              child: const Text("OK"),
+            ),
+          ],
+        ),
+      );
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final ethAmount = widget.blockchainService.convertMyrToEth(widget.invoice.totalAmount);
+
+    return Scaffold(
+      appBar: AppBar(
+        title: const Text("Blockchain Payment"),
+        foregroundColor: Colors.white,
+      ),
+      body: SingleChildScrollView(
+        padding: const EdgeInsets.all(20),
+        child: Form(
+          key: _formKey,
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Container(
+                padding: const EdgeInsets.all(20),
+                decoration: BoxDecoration(
+                  gradient: const LinearGradient(
+                    colors: [Color(0xffE65100), Color(0xffFF9800)],
+                    begin: Alignment.topLeft,
+                    end: Alignment.bottomRight,
+                  ),
+                  borderRadius: BorderRadius.circular(16),
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      children: [
+                        const Icon(Icons.currency_bitcoin, color: Colors.white, size: 28),
+                        const SizedBox(width: 10),
+                        const Text(
+                          "ETH Payment",
+                          style: TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.bold),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 16),
+                    Text(
+                      "${ethAmount.toStringAsFixed(6)} ETH",
+                      style: const TextStyle(color: Colors.white, fontSize: 28, fontWeight: FontWeight.bold),
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      "RM ${widget.invoice.totalAmount.toStringAsFixed(2)}",
+                      style: const TextStyle(color: Colors.white70, fontSize: 14),
+                    ),
+                    const SizedBox(height: 12),
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                      decoration: BoxDecoration(
+                        color: Colors.white.withOpacity(0.2),
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      child: const Text(
+                        "Network: Ganache Local (127.0.0.1:7545)",
+                        style: TextStyle(color: Colors.white, fontSize: 12),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+
+              const SizedBox(height: 16),
+              Container(
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: Colors.blue.shade50,
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(color: Colors.blue.shade200),
+                ),
+                child: Row(
+                  children: [
+                    Icon(Icons.info_outline, color: Colors.blue.shade700, size: 20),
+                    const SizedBox(width: 10),
+                    Expanded(
+                      child: Text(
+                        "Sending to: ${BlockchainPaymentService.receiverAddress}",
+                        style: TextStyle(fontSize: 11, color: Colors.blue.shade700, fontFamily: 'monospace'),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+
+              const SizedBox(height: 24),
+              const Text(
+                "Your Wallet Details",
+                style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+              ),
+              const SizedBox(height: 16),
+
+              TextFormField(
+                controller: _addressController,
+                decoration: InputDecoration(
+                  labelText: "Wallet Address",
+                  hintText: "0x...",
+                  prefixIcon: const Icon(Icons.account_balance_wallet),
+                  border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+                  suffixIcon: IconButton(
+                    icon: const Icon(Icons.refresh),
+                    tooltip: "Check Balance",
+                    onPressed: _checkBalance,
+                  ),
+                ),
+                validator: (value) {
+                  if (value == null || value.trim().isEmpty) return 'Wallet address is required';
+                  if (!value.trim().startsWith('0x') || value.trim().length != 42) {
+                    return 'Invalid Ethereum address format';
+                  }
+                  return null;
+                },
+              ),
+
+              if (_walletBalance != null)
+                Padding(
+                  padding: const EdgeInsets.only(top: 8),
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                    decoration: BoxDecoration(
+                      color: Colors.green.shade50,
+                      borderRadius: BorderRadius.circular(8),
+                      border: Border.all(color: Colors.green.shade200),
+                    ),
+                    child: Row(
+                      children: [
+                        Icon(Icons.account_balance, color: Colors.green.shade700, size: 18),
+                        const SizedBox(width: 8),
+                        Text(
+                          "Balance: $_walletBalance ETH",
+                          style: TextStyle(color: Colors.green.shade700, fontWeight: FontWeight.bold),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+
+              const SizedBox(height: 16),
+
+              TextFormField(
+                controller: _privateKeyController,
+                obscureText: _obscureKey,
+                decoration: InputDecoration(
+                  labelText: "Private Key",
+                  hintText: "Enter your private key",
+                  prefixIcon: const Icon(Icons.key),
+                  border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+                  suffixIcon: IconButton(
+                    icon: Icon(_obscureKey ? Icons.visibility : Icons.visibility_off),
+                    onPressed: () => setState(() => _obscureKey = !_obscureKey),
+                  ),
+                ),
+                validator: (value) {
+                  if (value == null || value.trim().isEmpty) return 'Private key is required';
+                  final key = value.trim().startsWith('0x') ? value.trim().substring(2) : value.trim();
+                  if (key.length != 64) return 'Invalid private key length';
+                  return null;
+                },
+              ),
+
+              const SizedBox(height: 8),
+              Container(
+                padding: const EdgeInsets.all(10),
+                decoration: BoxDecoration(
+                  color: Colors.amber.shade50,
+                  borderRadius: BorderRadius.circular(8),
+                  border: Border.all(color: Colors.amber.shade300),
+                ),
+                child: Row(
+                  children: [
+                    Icon(Icons.warning_amber, color: Colors.amber.shade800, size: 18),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: Text(
+                        "Your private key is never stored and is only used for this transaction.",
+                        style: TextStyle(color: Colors.amber.shade800, fontSize: 12),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+
+              const SizedBox(height: 32),
+
+              SizedBox(
+                width: double.infinity,
+                height: 52,
+                child: ElevatedButton.icon(
+                  onPressed: _isProcessing ? null : _processPayment,
+                  icon: _isProcessing
+                      ? const SizedBox(
+                          width: 20,
+                          height: 20,
+                          child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
+                        )
+                      : const Icon(Icons.send),
+                  label: Text(
+                    _isProcessing ? "Processing..." : "Pay ${ethAmount.toStringAsFixed(6)} ETH",
+                    style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+                  ),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: Colors.orange.shade700,
+                    foregroundColor: Colors.white,
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+                    disabledBackgroundColor: Colors.orange.shade300,
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
       ),
     );
   }

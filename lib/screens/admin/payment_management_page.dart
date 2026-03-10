@@ -530,44 +530,66 @@ class _PaymentManagementPageState extends State<PaymentManagementPage>
                           ),
                         ),
                       if (invoice.status == 'paid' && paymentMethod != null)
-                        Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-                          decoration: BoxDecoration(
-                            color: paymentMethod == 'paypal'
+                        Builder(
+                          builder: (context) {
+                            final method = paymentMethod.toLowerCase();
+                            final bool isPaypal = method == 'paypal';
+                            final bool isBlockchain = method == 'blockchain';
+
+                            final Color bgColor = isPaypal
                                 ? Colors.indigo.withOpacity(0.1)
-                                : Colors.green.withOpacity(0.1),
-                            borderRadius: BorderRadius.circular(6),
-                            border: Border.all(
-                              color: paymentMethod == 'paypal'
-                                  ? Colors.indigo.withOpacity(0.3)
-                                  : Colors.green.withOpacity(0.3),
-                            ),
-                          ),
-                          child: Row(
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              Icon(
-                                paymentMethod == 'paypal'
-                                    ? Icons.account_balance_wallet_outlined
-                                    : Icons.payments_outlined,
-                                size: 12,
-                                color: paymentMethod == 'paypal'
-                                    ? Colors.indigo
-                                    : Colors.green,
+                                : isBlockchain
+                                    ? Colors.deepPurple.withOpacity(0.1)
+                                    : Colors.green.withOpacity(0.1);
+                            final Color borderColor = isPaypal
+                                ? Colors.indigo.withOpacity(0.3)
+                                : isBlockchain
+                                    ? Colors.deepPurple.withOpacity(0.3)
+                                    : Colors.green.withOpacity(0.3);
+                            final Color textColor = isPaypal
+                                ? Colors.indigo
+                                : isBlockchain
+                                    ? Colors.deepPurple
+                                    : Colors.green;
+                            final IconData icon = isPaypal
+                                ? Icons.account_balance_wallet_outlined
+                                : isBlockchain
+                                    ? Icons.currency_bitcoin
+                                    : Icons.payments_outlined;
+                            final String label = isPaypal
+                                ? 'PAYPAL'
+                                : isBlockchain
+                                    ? 'BLOCKCHAIN'
+                                    : 'CASH';
+
+                            return Container(
+                              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                              decoration: BoxDecoration(
+                                color: bgColor,
+                                borderRadius: BorderRadius.circular(6),
+                                border: Border.all(color: borderColor),
                               ),
-                              const SizedBox(width: 4),
-                              Text(
-                                paymentMethod == 'paypal' ? 'PAYPAL' : 'CASH',
-                                style: TextStyle(
-                                  color: paymentMethod == 'paypal'
-                                      ? Colors.indigo
-                                      : Colors.green,
-                                  fontSize: 10,
-                                  fontWeight: FontWeight.w600,
-                                ),
+                              child: Row(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  Icon(
+                                    icon,
+                                    size: 12,
+                                    color: textColor,
+                                  ),
+                                  const SizedBox(width: 4),
+                                  Text(
+                                    label,
+                                    style: TextStyle(
+                                      color: textColor,
+                                      fontSize: 10,
+                                      fontWeight: FontWeight.w600,
+                                    ),
+                                  ),
+                                ],
                               ),
-                            ],
-                          ),
+                            );
+                          },
                         ),
                       if (invoice.status != 'paid' ||
                           (invoice.status == 'paid' && paymentMethod != null))
@@ -1076,71 +1098,102 @@ class _PaymentManagementPageState extends State<PaymentManagementPage>
   // ============ REPORTS TAB ============
 
   Widget _buildReportsTab() {
-    return StreamBuilder<List<Invoice>>(
-      stream: _paymentService.streamAllInvoices(),
-      builder: (context, snapshot) {
-        if (snapshot.connectionState == ConnectionState.waiting) {
-          return const Center(child: CircularProgressIndicator());
-        }
+    return StreamBuilder<List<PaymentTransaction>>(
+      stream: _paymentService.streamAllTransactions(),
+      builder: (context, txnSnapshot) {
+        final transactions = txnSnapshot.data ?? [];
 
-        final invoices = snapshot.data ?? [];
-        final totalRevenue =
-            invoices.where((i) => i.status == 'paid').fold(0.0, (sum, i) => sum + i.totalAmount);
-        final pendingAmount =
-            invoices.where((i) => i.status == 'pending').fold(0.0, (sum, i) => sum + i.totalAmount);
-        final overdueAmount =
-            invoices.where((i) => i.status == 'overdue').fold(0.0, (sum, i) => sum + i.totalAmount);
+        return StreamBuilder<List<Invoice>>(
+          stream: _paymentService.streamAllInvoices(),
+          builder: (context, snapshot) {
+            if (snapshot.connectionState == ConnectionState.waiting &&
+                txnSnapshot.connectionState == ConnectionState.waiting) {
+              return const Center(child: CircularProgressIndicator());
+            }
 
-        return SingleChildScrollView(
-          padding: const EdgeInsets.all(20),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              const Text(
-                "Payment Statistics",
-                style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
-              ),
-              const SizedBox(height: 20),
-              Row(
+            final invoices = snapshot.data ?? [];
+
+            // Total revenue based on completed transactions (same as PaymentReportPage)
+            final totalRevenue = transactions
+                .where((t) => t.status == 'completed')
+                .fold(0.0, (sum, t) => sum + t.amount);
+
+            // Pending and overdue amounts based on invoice statuses
+            final pendingAmount = invoices
+                .where((i) => i.status == 'pending')
+                .fold(0.0, (sum, i) => sum + i.totalAmount);
+            final overdueAmount = invoices
+                .where((i) => i.status == 'overdue')
+                .fold(0.0, (sum, i) => sum + i.totalAmount);
+
+            return SingleChildScrollView(
+              padding: const EdgeInsets.all(20),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Expanded(
-                    child: _buildStatCard("Total Revenue", "RM ${totalRevenue.toStringAsFixed(2)}", Colors.green),
+                  const Text(
+                    "Payment Statistics",
+                    style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
                   ),
-                  const SizedBox(width: 12),
-                  Expanded(
-                    child: _buildStatCard("Pending", "RM ${pendingAmount.toStringAsFixed(2)}", Colors.orange),
+                  const SizedBox(height: 20),
+                  Row(
+                    children: [
+                      Expanded(
+                        child: _buildStatCard(
+                          "Total Revenue",
+                          "RM ${totalRevenue.toStringAsFixed(2)}",
+                          Colors.green,
+                        ),
+                      ),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: _buildStatCard(
+                          "Pending",
+                          "RM ${pendingAmount.toStringAsFixed(2)}",
+                          Colors.orange,
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 12),
+                  Row(
+                    children: [
+                      Expanded(
+                        child: _buildStatCard(
+                          "Overdue",
+                          "RM ${overdueAmount.toStringAsFixed(2)}",
+                          Colors.red,
+                        ),
+                      ),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: _buildStatCard(
+                          "Total Invoices",
+                          invoices.length.toString(),
+                          _primaryColor,
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 28),
+                  SizedBox(
+                    width: double.infinity,
+                    child: ElevatedButton.icon(
+                      onPressed: () => _exportPaymentReport(invoices, transactions),
+                      icon: const Icon(Icons.download),
+                      label: const Text("Export Payment Report (PDF)"),
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: _primaryColor,
+                        foregroundColor: Colors.white,
+                        padding: const EdgeInsets.symmetric(vertical: 14),
+                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                      ),
+                    ),
                   ),
                 ],
               ),
-              const SizedBox(height: 12),
-              Row(
-                children: [
-                  Expanded(
-                    child: _buildStatCard("Overdue", "RM ${overdueAmount.toStringAsFixed(2)}", Colors.red),
-                  ),
-                  const SizedBox(width: 12),
-                  Expanded(
-                    child: _buildStatCard("Total Invoices", invoices.length.toString(), _primaryColor),
-                  ),
-                ],
-              ),
-              const SizedBox(height: 28),
-              SizedBox(
-                width: double.infinity,
-                child: ElevatedButton.icon(
-                  onPressed: () => _exportPaymentReport(invoices, []),
-                  icon: const Icon(Icons.download),
-                  label: const Text("Export Payment Report (PDF)"),
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: _primaryColor,
-                    foregroundColor: Colors.white,
-                    padding: const EdgeInsets.symmetric(vertical: 14),
-                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-                  ),
-                ),
-              ),
-            ],
-          ),
+            );
+          },
         );
       },
     );

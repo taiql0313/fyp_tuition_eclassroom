@@ -11,6 +11,7 @@ import '../teacher/create_announcement_page.dart';
 import '../teacher/teacher_chat_list.dart';
 import '../teacher/create_attendance_code_page.dart';
 import '../teacher/notifications/teacher_notification_center_page.dart';
+import '../teacher/teacher_attendance_report_page.dart';
 import '../../services/notification_service.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
@@ -324,14 +325,28 @@ class _TeacherDashboardState extends State<TeacherDashboard> {
                       // 👇 ATTENDANCE TILE - LINKED TO CODE GENERATOR
                       _teacherTile(
                         context,
-                        'Attendance',
-                        Icons.how_to_reg_outlined,
+                        'Attendance\n(Scan / Code)',
+                        Icons.qr_code_scanner,
                         const Color(0xFFE8F5E9), // Light green
                         const Color(0xFF388E3C), // Dark green
                         Routes.login,
                         onTap: () => Navigator.push(
                           context,
                           MaterialPageRoute(builder: (_) => const CreateAttendanceCodePage()),
+                        ),
+                      ),
+
+                      // MESSAGES TILE
+                      _teacherTile(
+                        context,
+                        'Attendance\nReports',
+                        Icons.bar_chart,
+                        const Color(0xFFE3F2FD), // Light blue
+                        const Color(0xFF1976D2), // Dark blue
+                        Routes.login,
+                        onTap: () => Navigator.push(
+                          context,
+                          MaterialPageRoute(builder: (_) => const TeacherAttendanceReportPage()),
                         ),
                       ),
 

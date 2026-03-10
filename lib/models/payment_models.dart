@@ -142,6 +142,11 @@ class PaymentTransaction {
   final DateTime createdAt;
   final DateTime? completedAt;
   final String? notes; // Admin notes for manual payments
+  final String? blockchainTxHash;
+  final String? blockchainFromAddress;
+  final String? blockchainToAddress;
+  final double? blockchainAmountEth;
+  final String? blockchainNetwork;
 
   PaymentTransaction({
     required this.id,
@@ -159,6 +164,11 @@ class PaymentTransaction {
     required this.createdAt,
     this.completedAt,
     this.notes,
+    this.blockchainTxHash,
+    this.blockchainFromAddress,
+    this.blockchainToAddress,
+    this.blockchainAmountEth,
+    this.blockchainNetwork,
   });
 
   factory PaymentTransaction.fromMap(String id, Map<String, dynamic> map) {
@@ -178,6 +188,11 @@ class PaymentTransaction {
       createdAt: (map['createdAt'] as Timestamp?)?.toDate() ?? DateTime.now(),
       completedAt: (map['completedAt'] as Timestamp?)?.toDate(),
       notes: map['notes'],
+      blockchainTxHash: map['blockchainTxHash'],
+      blockchainFromAddress: map['blockchainFromAddress'],
+      blockchainToAddress: map['blockchainToAddress'],
+      blockchainAmountEth: (map['blockchainAmountEth'] as num?)?.toDouble(),
+      blockchainNetwork: map['blockchainNetwork'],
     );
   }
 
@@ -197,6 +212,11 @@ class PaymentTransaction {
       'createdAt': Timestamp.fromDate(createdAt),
       'completedAt': completedAt != null ? Timestamp.fromDate(completedAt!) : null,
       'notes': notes,
+      'blockchainTxHash': blockchainTxHash,
+      'blockchainFromAddress': blockchainFromAddress,
+      'blockchainToAddress': blockchainToAddress,
+      'blockchainAmountEth': blockchainAmountEth,
+      'blockchainNetwork': blockchainNetwork,
     };
   }
 }
