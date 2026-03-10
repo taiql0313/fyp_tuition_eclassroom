@@ -4,7 +4,7 @@ import '../../services/attendance_service.dart';
 import 'teacher_quiz_student_detail_page.dart';
 
 /// Teacher view: All students' quiz performance (submitted + unsubmitted)
-/// 老师视角：所有学生的测验表现（已提交 + 未提交）
+///
 class TeacherQuizManagementPage extends StatefulWidget {
   final String quizId;
   final Map<String, dynamic> quizData;

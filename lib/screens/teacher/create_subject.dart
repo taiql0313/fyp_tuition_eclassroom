@@ -50,6 +50,8 @@ class _CreateClassroomPageState extends State<CreateClassroomPage> {
   
   // Store locked time slots: key = "form-day-timeStart-timeEnd", value = class name
   Map<String, String> _lockedSlots = {};
+  // Teacher's own time slots: key = "day-timeStart-timeEnd", value = class name
+  Map<String, String> _teacherOwnSlots = {};
 
   @override
   void initState() {
@@ -63,58 +65,66 @@ class _CreateClassroomPageState extends State<CreateClassroomPage> {
     setState(() => _isLoadingLocks = true);
     
     try {
+      final currentUid = _auth.currentUser?.uid;
       final snapshot = await FirebaseFirestore.instance.collection('classrooms').get();
       
-      print('DEBUG _loadLockedTimeSlots: Found ${snapshot.docs.length} classroom documents');
-      
       final Map<String, String> locks = {};
+      final Map<String, String> teacherSlots = {};
+      
       for (var doc in snapshot.docs) {
         final data = doc.data();
-        final form = data['form'] as String?; // Form level (Form 1, Form 2, etc.)
+        final form = data['form'] as String?;
         final day = data['day'] as String?;
         final timeStart = data['timeStart'] as String?;
         final timeEnd = data['timeEnd'] as String?;
         final className = data['className'] as String? ?? 'Unknown Class';
-        
-        print('DEBUG _loadLockedTimeSlots: Classroom ${doc.id} - form="$form", day="$day", timeStart="$timeStart", timeEnd="$timeEnd", className="$className"');
+        final teacherId = data['teacherId'] as String?;
         
         if (form != null && day != null && timeStart != null && timeEnd != null) {
-          // Key includes form level so different forms don't conflict
           final key = '$form-$day-$timeStart-$timeEnd';
           locks[key] = className;
-          print('DEBUG _loadLockedTimeSlots: Added lock key="$key" by "$className"');
-        } else {
-          print('DEBUG _loadLockedTimeSlots: Skipped - missing form/day/time fields');
+          
+          // Track the current teacher's own slots (any form, same day+time = conflict)
+          if (currentUid != null && teacherId == currentUid) {
+            final teacherKey = '$day-$timeStart-$timeEnd';
+            teacherSlots[teacherKey] = className;
+          }
         }
       }
       
       setState(() {
         _lockedSlots = locks;
+        _teacherOwnSlots = teacherSlots;
         _isLoadingLocks = false;
       });
-      
-      print('DEBUG _loadLockedTimeSlots: Total locked slots: ${_lockedSlots.length}');
-      print('DEBUG _loadLockedTimeSlots: All keys: ${_lockedSlots.keys.toList()}');
     } catch (e) {
       print('Error loading locked slots: $e');
       setState(() => _isLoadingLocks = false);
     }
   }
   
-  // Check if a time slot is locked for a specific form and day
+  // Check if a time slot is locked (form-level or teacher's own schedule)
   bool _isTimeSlotLocked(String? form, String day, String timeStart, String timeEnd) {
-    if (form == null) return false; // Can't check without form
-    final key = '$form-$day-$timeStart-$timeEnd';
-    final isLocked = _lockedSlots.containsKey(key);
-    print('DEBUG _isTimeSlotLocked: key="$key", isLocked=$isLocked');
-    return isLocked;
+    // Check teacher's own schedule conflict (can't teach two classes at once)
+    final teacherKey = '$day-$timeStart-$timeEnd';
+    if (_teacherOwnSlots.containsKey(teacherKey)) return true;
+    
+    // Check form-level conflict (same form, same slot by any teacher)
+    if (form == null) return false;
+    final formKey = '$form-$day-$timeStart-$timeEnd';
+    return _lockedSlots.containsKey(formKey);
   }
   
-  // Get the class name that locked a specific slot
+  // Get the class name that locked a specific slot and the reason
   String? _getLockedByClassName(String? form, String day, String timeStart, String timeEnd) {
+    // Teacher's own conflict takes priority
+    final teacherKey = '$day-$timeStart-$timeEnd';
+    if (_teacherOwnSlots.containsKey(teacherKey)) {
+      return '${_teacherOwnSlots[teacherKey]} (your class)';
+    }
     if (form == null) return null;
-    final key = '$form-$day-$timeStart-$timeEnd';
-    return _lockedSlots[key];
+    final formKey = '$form-$day-$timeStart-$timeEnd';
+    return _lockedSlots[formKey];
   }
 
   Future<void> _loadCurrentUser() async {
@@ -254,32 +264,46 @@ class _CreateClassroomPageState extends State<CreateClassroomPage> {
       
       setState(() => _isSaving = true);
       
-      // Real-time conflict check (in case another teacher just created a class)
-      // Only check within the same form level
+      // Real-time conflict check (in case something changed since page loaded)
       final conflictCheck = await FirebaseFirestore.instance
           .collection('classrooms')
           .get();
       
       for (var doc in conflictCheck.docs) {
         final data = doc.data();
-        // Only check conflict within the same form level
-        if (data['form'] == _selectedForm &&
-            data['day'] == _selectedDay &&
+        if (data['day'] == _selectedDay &&
             data['timeStart'] == timeStart &&
             data['timeEnd'] == timeEnd) {
-          setState(() => _isSaving = false);
-          if (mounted) {
-            ScaffoldMessenger.of(context).showSnackBar(
-              SnackBar(
-                content: Text('This time slot was just taken by "${data['className']}" for $_selectedForm. Please select another time.'),
-                backgroundColor: Colors.red,
-                duration: const Duration(seconds: 3),
-              ),
-            );
-            // Refresh locked slots
-            await _loadLockedTimeSlots();
+          // Teacher can't teach two classes at the same time
+          if (data['teacherId'] == user.uid) {
+            setState(() => _isSaving = false);
+            if (mounted) {
+              ScaffoldMessenger.of(context).showSnackBar(
+                SnackBar(
+                  content: Text('You already have "${data['className']}" at this time slot. You cannot teach two classes simultaneously.'),
+                  backgroundColor: Colors.red,
+                  duration: const Duration(seconds: 3),
+                ),
+              );
+              await _loadLockedTimeSlots();
+            }
+            return;
           }
-          return;
+          // Same form can't have two classes at the same time
+          if (data['form'] == _selectedForm) {
+            setState(() => _isSaving = false);
+            if (mounted) {
+              ScaffoldMessenger.of(context).showSnackBar(
+                SnackBar(
+                  content: Text('This time slot was just taken by "${data['className']}" for $_selectedForm. Please select another time.'),
+                  backgroundColor: Colors.red,
+                  duration: const Duration(seconds: 3),
+                ),
+              );
+              await _loadLockedTimeSlots();
+            }
+            return;
+          }
         }
       }
 
@@ -673,7 +697,7 @@ class _CreateClassroomPageState extends State<CreateClassroomPage> {
         const Padding(
           padding: EdgeInsets.only(top: 4),
           child: Text(
-            'Time slots are only locked within the same form level',
+            'Slots you already teach or taken by same form are locked',
             style: TextStyle(fontSize: 11, color: Colors.grey),
           ),
         ),
@@ -699,14 +723,14 @@ class _CreateClassroomPageState extends State<CreateClassroomPage> {
               onChanged: (val) {
                 setState(() {
                   _selectedDay = val;
-                  // Reset time slot if it's now locked on the new day (within same form)
-                  if (_selectedTimeSlot != null && val != null && _selectedForm != null) {
+                  // Reset time slot if it's now locked on the new day
+                  if (_selectedTimeSlot != null && val != null) {
                     final selectedSlot = _timeSlots.firstWhere(
                       (s) => s['label'] == _selectedTimeSlot,
                       orElse: () => {'start': '', 'end': '', 'label': ''},
                     );
                     if (_isTimeSlotLocked(_selectedForm, val, selectedSlot['start']!, selectedSlot['end']!)) {
-                      _selectedTimeSlot = null; // Reset if locked
+                      _selectedTimeSlot = null;
                     }
                   }
                 });
@@ -745,10 +769,10 @@ class _CreateClassroomPageState extends State<CreateClassroomPage> {
               hint: const Text("Select Time Slot"),
               value: _selectedTimeSlot,
               items: _timeSlots.map((slot) {
-                // Only check lock if both form and day are selected
-                final isLocked = _selectedForm != null && _selectedDay != null && 
+                // Check lock if day is selected (teacher conflict works without form)
+                final isLocked = _selectedDay != null && 
                     _isTimeSlotLocked(_selectedForm, _selectedDay!, slot['start']!, slot['end']!);
-                final lockedBy = _selectedForm != null && _selectedDay != null
+                final lockedBy = _selectedDay != null
                     ? _getLockedByClassName(_selectedForm, _selectedDay!, slot['start']!, slot['end']!)
                     : null;
                 
@@ -786,40 +810,34 @@ class _CreateClassroomPageState extends State<CreateClassroomPage> {
                 );
               }).toList(),
               onChanged: (val) {
-                print('DEBUG onChanged: val=$val, selectedForm=$_selectedForm, selectedDay=$_selectedDay');
-                // Only allow selection if not locked (check form + day + time)
-                if (val != null && _selectedForm != null && _selectedDay != null) {
+                if (val != null && _selectedDay != null) {
                   final selectedSlot = _timeSlots.firstWhere((s) => s['label'] == val);
                   final isLocked = _isTimeSlotLocked(_selectedForm, _selectedDay!, selectedSlot['start']!, selectedSlot['end']!);
-                  print('DEBUG onChanged: checking lock for $_selectedForm-$_selectedDay-${selectedSlot['start']}-${selectedSlot['end']} = $isLocked');
-                  print('DEBUG onChanged: lockedSlots keys = ${_lockedSlots.keys.toList()}');
                   
                   if (isLocked) {
-                    print('DEBUG onChanged: BLOCKED - slot is locked for $_selectedForm');
+                    final lockedBy = _getLockedByClassName(_selectedForm, _selectedDay!, selectedSlot['start']!, selectedSlot['end']!);
                     ScaffoldMessenger.of(context).showSnackBar(
                       SnackBar(
-                        content: Text('This time slot is already taken for $_selectedForm!'),
+                        content: Text('This time slot is already taken by $lockedBy'),
                         backgroundColor: Colors.red,
                         duration: const Duration(seconds: 2),
                       ),
                     );
-                    return; // Don't allow selection
+                    return;
                   }
                   setState(() => _selectedTimeSlot = val);
                 } else if (val != null) {
-                  // Form or day not selected yet, allow time selection
-                  print('DEBUG onChanged: Form or day not selected, allowing time selection');
                   setState(() => _selectedTimeSlot = val);
                 }
               },
             ),
           ),
         ),
-        if (_selectedForm != null && _selectedDay != null && _lockedSlots.isNotEmpty)
+        if (_selectedDay != null && (_lockedSlots.isNotEmpty || _teacherOwnSlots.isNotEmpty))
           Padding(
             padding: const EdgeInsets.only(top: 4),
             child: Text(
-              'Locked slots are already taken by other $_selectedForm classes',
+              'Locked slots conflict with your schedule or other $_selectedForm classes',
               style: TextStyle(fontSize: 11, color: Colors.grey.shade600),
             ),
           ),

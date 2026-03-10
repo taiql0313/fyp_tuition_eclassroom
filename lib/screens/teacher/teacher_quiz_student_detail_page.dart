@@ -2,7 +2,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
 
 /// Teacher view: Single student's quiz result - view, grade pending, add feedback
-/// 老师视角：单个学生的测验结果 - 查看、评分待批改题、添加反馈
+
 class TeacherQuizStudentDetailPage extends StatefulWidget {
   final String quizId;
   final Map<String, dynamic> quizData;
