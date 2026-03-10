@@ -27,26 +27,21 @@ class _AttendancePageState extends State<AttendancePage> {
   AppUser? _currentUser;
   String? _selectedClassId;
   Map<String, Map<String, dynamic>> _classes = {};
-  Map<String, dynamic>? _stats;
 
   @override
   void initState() {
     super.initState();
     _loadUserData();
-    // Check for expired sessions when page loads
     _checkExpiredSessions();
   }
 
   Future<void> _checkExpiredSessions() async {
-    // This will auto-close expired sessions and mark absent students
     try {
       await _attendanceService.checkAndCloseExpiredSessions();
     } catch (e) {
-      // Silently handle - this is a background check
       print('Error checking expired sessions: $e');
     }
   }
-
 
   Future<void> _loadUserData() async {
     final user = _auth.currentUser;
@@ -59,7 +54,6 @@ class _AttendancePageState extends State<AttendancePage> {
       _currentUser = appUser;
     });
 
-    // Load class information
     if (appUser.classIds.isNotEmpty) {
       for (var classId in appUser.classIds) {
         final classDoc = await _db.collection('classrooms').doc(classId).get();
@@ -72,21 +66,7 @@ class _AttendancePageState extends State<AttendancePage> {
           });
         }
       }
-      _loadStats();
     }
-  }
-
-  Future<void> _loadStats() async {
-    if (_selectedClassId == null || _currentUser == null) return;
-    
-    final stats = await _attendanceService.getStudentStats(
-      _currentUser!.uid,
-      _selectedClassId!,
-    );
-    
-    setState(() {
-      _stats = stats;
-    });
   }
 
   @override
@@ -126,79 +106,88 @@ class _AttendancePageState extends State<AttendancePage> {
                   setState(() {
                     _selectedClassId = value;
                   });
-                  _loadStats();
                 },
               ),
               const SizedBox(height: 20),
             ],
 
-            // --- 1. Summary Card ---
-            Container(
-              padding: const EdgeInsets.all(24),
-              decoration: BoxDecoration(
-                gradient: const LinearGradient(
-                  colors: [Color(0xff1458a3), Color(0xff4a90e2)],
-                  begin: Alignment.topLeft,
-                  end: Alignment.bottomRight,
+            // --- 1. Summary Card (Real-time) ---
+            if (_currentUser != null && _selectedClassId != null)
+              StreamBuilder<Map<String, dynamic>>(
+                stream: _attendanceService.streamStudentStats(
+                  _currentUser!.uid,
+                  _selectedClassId!,
                 ),
-                borderRadius: BorderRadius.circular(20),
-                boxShadow: [
-                  BoxShadow(
-                    color: const Color(0xff1458a3).withOpacity(0.3),
-                    blurRadius: 10,
-                    offset: const Offset(0, 4),
-                  ),
-                ],
-              ),
-              child: Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                children: [
-                  Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      const Text(
-                        "Attendance Rate",
-                        style: TextStyle(color: Colors.white70, fontSize: 14),
-                      ),
-                      const SizedBox(height: 8),
-                      Text(
-                        _stats != null ? "${_stats!['rate']}%" : "0%",
-                        style: const TextStyle(
-                          color: Colors.white,
-                          fontSize: 32,
-                          fontWeight: FontWeight.bold,
-                        ),
-                      ),
-                    ],
-                  ),
-                  Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                builder: (context, snapshot) {
+                  final stats = snapshot.data;
+                  return Container(
+                    padding: const EdgeInsets.all(24),
                     decoration: BoxDecoration(
-                      color: Colors.white.withOpacity(0.2),
-                      borderRadius: BorderRadius.circular(12),
-                    ),
-                    child: Column(
-                      children: [
-                        Text(
-                          "Present: ${_stats?['present'] ?? 0}",
-                          style: const TextStyle(color: Colors.white, fontSize: 12),
-                        ),
-                        const SizedBox(height: 4),
-                        Text(
-                          "Excused: ${_stats?['excused'] ?? 0}",
-                          style: const TextStyle(color: Colors.white, fontSize: 12),
-                        ),
-                        const SizedBox(height: 4),
-                        Text(
-                          "Absent: ${_stats?['absent'] ?? 0}",
-                          style: const TextStyle(color: Colors.white, fontSize: 12),
+                      gradient: const LinearGradient(
+                        colors: [Color(0xff1458a3), Color(0xff4a90e2)],
+                        begin: Alignment.topLeft,
+                        end: Alignment.bottomRight,
+                      ),
+                      borderRadius: BorderRadius.circular(20),
+                      boxShadow: [
+                        BoxShadow(
+                          color: const Color(0xff1458a3).withOpacity(0.3),
+                          blurRadius: 10,
+                          offset: const Offset(0, 4),
                         ),
                       ],
                     ),
-                  )
-                ],
+                    child: Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            const Text(
+                              "Attendance Rate",
+                              style: TextStyle(color: Colors.white70, fontSize: 14),
+                            ),
+                            const SizedBox(height: 8),
+                            Text(
+                              "${stats?['rate'] ?? 0}%",
+                              style: const TextStyle(
+                                color: Colors.white,
+                                fontSize: 32,
+                                fontWeight: FontWeight.bold,
+                              ),
+                            ),
+                          ],
+                        ),
+                        Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                          decoration: BoxDecoration(
+                            color: Colors.white.withOpacity(0.2),
+                            borderRadius: BorderRadius.circular(12),
+                          ),
+                          child: Column(
+                            children: [
+                              Text(
+                                "Present: ${stats?['present'] ?? 0}",
+                                style: const TextStyle(color: Colors.white, fontSize: 12),
+                              ),
+                              const SizedBox(height: 4),
+                              Text(
+                                "Excused: ${stats?['excused'] ?? 0}",
+                                style: const TextStyle(color: Colors.white, fontSize: 12),
+                              ),
+                              const SizedBox(height: 4),
+                              Text(
+                                "Absent: ${stats?['absent'] ?? 0}",
+                                style: const TextStyle(color: Colors.white, fontSize: 12),
+                              ),
+                            ],
+                          ),
+                        )
+                      ],
+                    ),
+                  );
+                },
               ),
-            ),
 
             const SizedBox(height: 30),
             const Text("Quick Actions", style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),

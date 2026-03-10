@@ -3,20 +3,21 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 
-class StudentTimetablePage extends StatefulWidget {
-  const StudentTimetablePage({super.key});
+class TeacherTimetableViewPage extends StatefulWidget {
+  const TeacherTimetableViewPage({super.key});
 
   @override
-  State<StudentTimetablePage> createState() => _StudentTimetablePageState();
+  State<TeacherTimetableViewPage> createState() => _TeacherTimetableViewPageState();
 }
 
-class _StudentTimetablePageState extends State<StudentTimetablePage> with SingleTickerProviderStateMixin {
+class _TeacherTimetableViewPageState extends State<TeacherTimetableViewPage>
+    with SingleTickerProviderStateMixin {
   late TabController _tabController;
   int _weekOffset = 0;
   DateTime _selectedDate = DateTime.now();
-  List<Map<String, dynamic>> _enrolledClasses = [];
+  List<Map<String, dynamic>> _teacherClasses = [];
   Map<String, Map<String, dynamic>> _timetables = {};
-  Map<String, String> _teacherNames = {};
+  Map<String, int> _studentCounts = {};
   Map<String, List<Map<String, dynamic>>> _replacementClasses = {};
   Map<String, List<String>> _cancelledDates = {};
   bool _isLoading = true;
@@ -30,7 +31,7 @@ class _StudentTimetablePageState extends State<StudentTimetablePage> with Single
     final today = DateTime.now().weekday - 1;
     _tabController.index = today;
     _tabController.addListener(_onTabChanged);
-    _loadEnrolledClasses();
+    _loadTeacherClasses();
   }
 
   @override
@@ -65,7 +66,7 @@ class _StudentTimetablePageState extends State<StudentTimetablePage> with Single
     });
   }
 
-  Future<void> _loadEnrolledClasses() async {
+  Future<void> _loadTeacherClasses() async {
     final user = FirebaseAuth.instance.currentUser;
     if (user == null) {
       setState(() => _isLoading = false);
@@ -73,48 +74,29 @@ class _StudentTimetablePageState extends State<StudentTimetablePage> with Single
     }
 
     try {
-      final userDoc = await FirebaseFirestore.instance
-          .collection('users')
-          .doc(user.uid)
-          .get();
-
-      final userData = userDoc.data();
-      final classIds = List<String>.from(userData?['classIds'] ?? []);
-
-      if (classIds.isEmpty) {
-        setState(() => _isLoading = false);
-        return;
-      }
-
       final classesSnapshot = await FirebaseFirestore.instance
           .collection('classrooms')
-          .where(FieldPath.documentId, whereIn: classIds)
+          .where('teacherId', isEqualTo: user.uid)
           .get();
 
-      _enrolledClasses = [];
-      final teacherIds = <String>{};
-      final activeClassIds = <String>[];
+      _teacherClasses = [];
+      final classIds = <String>[];
 
       for (var doc in classesSnapshot.docs) {
         final data = doc.data();
         if (data['isArchived'] == true) continue;
 
-        final teacherId = data['teacherId'] as String?;
-        if (teacherId != null) teacherIds.add(teacherId);
-
-        activeClassIds.add(doc.id);
-        _enrolledClasses.add({
+        classIds.add(doc.id);
+        _teacherClasses.add({
           'classId': doc.id,
           'className': data['className'] ?? 'Unknown',
           'subject': data['subject'] ?? '',
-          'teacherId': teacherId ?? '',
         });
       }
 
-      await _loadTeacherNames(teacherIds.toList());
-
-      await _loadTimetables(activeClassIds);
-      await _loadReplacementClasses(activeClassIds);
+      await _loadStudentCounts(classIds);
+      await _loadTimetables(classIds);
+      await _loadReplacementClasses(classIds);
 
       setState(() => _isLoading = false);
     } catch (e) {
@@ -127,39 +109,33 @@ class _StudentTimetablePageState extends State<StudentTimetablePage> with Single
     }
   }
 
-  Future<void> _loadTeacherNames(List<String> teacherIds) async {
-    if (teacherIds.isEmpty) return;
-
-    try {
-      // Firestore whereIn limit is 10, so batch if needed
-      for (var i = 0; i < teacherIds.length; i += 10) {
-        final batch = teacherIds.skip(i).take(10).toList();
+  Future<void> _loadStudentCounts(List<String> classIds) async {
+    for (var classId in classIds) {
+      try {
         final snapshot = await FirebaseFirestore.instance
             .collection('users')
-            .where(FieldPath.documentId, whereIn: batch)
+            .where('classIds', arrayContains: classId)
+            .where('role', isEqualTo: 'student')
             .get();
-
-        for (var doc in snapshot.docs) {
-          final data = doc.data();
-          _teacherNames[doc.id] = data['displayName'] ?? 'Unknown Teacher';
-        }
+        _studentCounts[classId] = snapshot.docs.length;
+      } catch (_) {
+        _studentCounts[classId] = 0;
       }
-    } catch (e) {
-      print('Error loading teacher names: $e');
     }
   }
 
   Future<void> _loadTimetables(List<String> classIds) async {
+    if (classIds.isEmpty) return;
     try {
       for (var i = 0; i < classIds.length; i += 10) {
         final batch = classIds.skip(i).take(10).toList();
-        final timetablesSnapshot = await FirebaseFirestore.instance
+        final snapshot = await FirebaseFirestore.instance
             .collection('timetables')
             .where('classId', whereIn: batch)
             .where('status', isEqualTo: 'approved')
             .get();
 
-        for (var doc in timetablesSnapshot.docs) {
+        for (var doc in snapshot.docs) {
           final data = doc.data();
           final classId = data['classId'] as String;
           _timetables[classId] = data;
@@ -178,34 +154,32 @@ class _StudentTimetablePageState extends State<StudentTimetablePage> with Single
 
   Future<void> _loadReplacementClasses(List<String> classIds) async {
     _replacementClasses = {};
+    if (classIds.isEmpty) return;
+
+    final user = FirebaseAuth.instance.currentUser;
+    if (user == null) return;
+
     try {
-      if (classIds.isEmpty) return;
+      // Query by teacherId to satisfy Firestore security rules
+      // (rules require resource.data.teacherId == request.auth.uid for teachers)
+      final snapshot = await FirebaseFirestore.instance
+          .collection('replacement_classes')
+          .where('teacherId', isEqualTo: user.uid)
+          .get();
 
-      // Firestore whereIn limit is 10
-      for (var i = 0; i < classIds.length; i += 10) {
-        final batch = classIds.skip(i).take(10).toList();
+      final classIdSet = classIds.toSet();
+      for (var doc in snapshot.docs) {
+        final data = doc.data();
+        if (data['status'] != 'approved') continue;
+        final classId = data['classId'] as String? ?? '';
+        if (classId.isEmpty || !classIdSet.contains(classId)) continue;
 
-        final snapshot = await FirebaseFirestore.instance
-            .collection('replacement_classes')
-            .where('classId', whereIn: batch)
-            .get();
-
-        for (var doc in snapshot.docs) {
-          final data = doc.data();
-          // Only show approved replacement classes
-          if (data['status'] != 'approved') continue;
-
-          final classId = data['classId'] as String? ?? '';
-          if (classId.isEmpty) continue;
-
-          final list = _replacementClasses.putIfAbsent(classId, () => []);
-          list.add({
-            'originalDateStr': data['originalDateStr'] as String?,
-            'replacementDateStr': data['replacementDateStr'] as String?,
-            'startTime': data['startTime'] as String? ?? '',
-            'endTime': data['endTime'] as String? ?? '',
-          });
-        }
+        _replacementClasses.putIfAbsent(classId, () => []).add({
+          'originalDateStr': data['originalDateStr'] as String?,
+          'replacementDateStr': data['replacementDateStr'] as String?,
+          'startTime': data['startTime'] as String? ?? '',
+          'endTime': data['endTime'] as String? ?? '',
+        });
       }
     } catch (e) {
       print('Error loading replacement classes: $e');
@@ -213,14 +187,12 @@ class _StudentTimetablePageState extends State<StudentTimetablePage> with Single
   }
 
   List<Map<String, dynamic>> _getClassesForDay(int dayIndex) {
-    // dayIndex: 0=Mon, 1=Tue, ..., 6=Sun
-    // Convert to stored format: 1=Mon, 2=Tue, ..., 7=Sun (or 0=Sun depending on your data)
-    final targetDayOfWeek = dayIndex + 1; // 1-7 (Mon-Sun)
+    final targetDayOfWeek = dayIndex + 1;
     final classesForDay = <Map<String, dynamic>>[];
     final dateForDay = _getDateForDayIndex(dayIndex);
     final dateStr = DateFormat('yyyy-MM-dd').format(dateForDay);
 
-    for (var classData in _enrolledClasses) {
+    for (var classData in _teacherClasses) {
       final classId = classData['classId'] as String;
       final timetable = _timetables[classId];
       final replacements = _replacementClasses[classId] ?? [];
@@ -232,27 +204,21 @@ class _StudentTimetablePageState extends State<StudentTimetablePage> with Single
 
       final isCancelledHere = cancelled.contains(dateStr);
 
-      // If there is an approved replacement whose replacementDate is this date,
-      // we show the replacement session on this date (even if on a different weekday).
       final replacementForThisDate = replacements.firstWhere(
         (r) => r['replacementDateStr'] == dateStr,
         orElse: () => {},
       );
 
       if (replacementForThisDate.isNotEmpty) {
-        final teacherId = classData['teacherId'] as String;
-        final teacherName = _teacherNames[teacherId] ?? 'Unknown Teacher';
-
         classesForDay.add({
           'classId': classId,
           'className': classData['className'],
           'subject': classData['subject'],
-          'teacherName': teacherName,
+          'studentCount': _studentCounts[classId] ?? 0,
           'startTime': replacementForThisDate['startTime'] ?? '',
           'endTime': replacementForThisDate['endTime'] ?? '',
           'isReplacement': true,
         });
-        // Continue to next class; do not also add base schedule for this date
         continue;
       }
 
@@ -260,28 +226,22 @@ class _StudentTimetablePageState extends State<StudentTimetablePage> with Single
         final baseSchedule = timetable['baseSchedule'] as Map<String, dynamic>?;
         if (baseSchedule != null) {
           int? scheduleDayOfWeek = baseSchedule['dayOfWeek'] as int?;
-          
-          // Handle different day formats (0=Sun vs 1=Mon)
-          // If stored as 0=Sun, 1=Mon, ..., 6=Sat, convert
           if (scheduleDayOfWeek != null) {
-            // Assuming stored as 0=Sun, 1=Mon, ..., 6=Sat
-            // Convert to 1=Mon, ..., 7=Sun
             int convertedDay;
             if (scheduleDayOfWeek == 0) {
-              convertedDay = 7; // Sunday
+              convertedDay = 7;
             } else {
-              convertedDay = scheduleDayOfWeek; // Mon=1, Tue=2, etc.
+              convertedDay = scheduleDayOfWeek;
             }
 
-            if (convertedDay == targetDayOfWeek && !isOriginalCancelledHere && !isCancelledHere) {
-              final teacherId = classData['teacherId'] as String;
-              final teacherName = _teacherNames[teacherId] ?? 'Unknown Teacher';
-
+            if (convertedDay == targetDayOfWeek &&
+                !isOriginalCancelledHere &&
+                !isCancelledHere) {
               classesForDay.add({
                 'classId': classId,
                 'className': classData['className'],
                 'subject': classData['subject'],
-                'teacherName': teacherName,
+                'studentCount': _studentCounts[classId] ?? 0,
                 'startTime': baseSchedule['startTime'] ?? '',
                 'endTime': baseSchedule['endTime'] ?? '',
                 'isReplacement': false,
@@ -292,7 +252,6 @@ class _StudentTimetablePageState extends State<StudentTimetablePage> with Single
       }
     }
 
-    // Sort by start time
     classesForDay.sort((a, b) {
       final aTime = a['startTime'] as String;
       final bTime = b['startTime'] as String;
@@ -323,14 +282,14 @@ class _StudentTimetablePageState extends State<StudentTimetablePage> with Single
 
     if (_isLoading) {
       return Scaffold(
-        appBar: AppBar(title: const Text('Class Timetable')),
+        appBar: AppBar(title: const Text('My Timetable')),
         body: const Center(child: CircularProgressIndicator()),
       );
     }
 
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Class Timetable'),
+        title: const Text('My Timetable'),
         bottom: PreferredSize(
           preferredSize: const Size.fromHeight(48),
           child: Container(
@@ -339,7 +298,8 @@ class _StudentTimetablePageState extends State<StudentTimetablePage> with Single
               controller: _tabController,
               isScrollable: false,
               labelColor: theme.appBarTheme.foregroundColor ?? Colors.white,
-              unselectedLabelColor: (theme.appBarTheme.foregroundColor ?? Colors.white).withOpacity(0.6),
+              unselectedLabelColor:
+                  (theme.appBarTheme.foregroundColor ?? Colors.white).withOpacity(0.6),
               indicatorColor: theme.appBarTheme.foregroundColor ?? Colors.white,
               indicatorWeight: 3,
               labelStyle: const TextStyle(fontWeight: FontWeight.bold, fontSize: 12),
@@ -351,50 +311,7 @@ class _StudentTimetablePageState extends State<StudentTimetablePage> with Single
       ),
       body: Column(
         children: [
-          // Week navigation header
-          Container(
-            width: double.infinity,
-            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
-            decoration: BoxDecoration(
-              color: theme.scaffoldBackgroundColor,
-              border: Border(bottom: BorderSide(color: Colors.grey.shade300)),
-            ),
-            child: Row(
-              children: [
-                IconButton(
-                  icon: const Icon(Icons.chevron_left, color: Color(0xFF1458A3)),
-                  onPressed: _weekOffset > 0 ? () => _changeWeek(-1) : null,
-                  visualDensity: VisualDensity.compact,
-                ),
-                Expanded(
-                  child: Column(
-                    children: [
-                      Text(
-                        _weekOffset == 0 ? 'This Week' : 'Next Week',
-                        style: const TextStyle(
-                          fontSize: 13,
-                          fontWeight: FontWeight.w600,
-                          color: Color(0xFF1458A3),
-                        ),
-                      ),
-                      const SizedBox(height: 2),
-                      Text(
-                        '${DateFormat('EEEE').format(_selectedDate)}  •  ${DateFormat('dd/MM/yyyy').format(_selectedDate)}',
-                        style: TextStyle(fontSize: 14, color: theme.colorScheme.onSurfaceVariant),
-                      ),
-                    ],
-                  ),
-                ),
-                IconButton(
-                  icon: const Icon(Icons.chevron_right, color: Color(0xFF1458A3)),
-                  onPressed: _weekOffset < 1 ? () => _changeWeek(1) : null,
-                  visualDensity: VisualDensity.compact,
-                ),
-              ],
-            ),
-          ),
-
-          // Tab content
+          _buildWeekHeader(theme),
           Expanded(
             child: TabBarView(
               controller: _tabController,
@@ -406,9 +323,52 @@ class _StudentTimetablePageState extends State<StudentTimetablePage> with Single
     );
   }
 
+  Widget _buildWeekHeader(ThemeData theme) {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+      decoration: BoxDecoration(
+        color: theme.scaffoldBackgroundColor,
+        border: Border(bottom: BorderSide(color: Colors.grey.shade300)),
+      ),
+      child: Row(
+        children: [
+          IconButton(
+            icon: const Icon(Icons.chevron_left, color: Color(0xFF1458A3)),
+            onPressed: _weekOffset > 0 ? () => _changeWeek(-1) : null,
+            visualDensity: VisualDensity.compact,
+          ),
+          Expanded(
+            child: Column(
+              children: [
+                Text(
+                  _weekOffset == 0 ? 'This Week' : 'Next Week',
+                  style: const TextStyle(
+                    fontSize: 13,
+                    fontWeight: FontWeight.w600,
+                    color: Color(0xFF1458A3),
+                  ),
+                ),
+                const SizedBox(height: 2),
+                Text(
+                  '${DateFormat('EEEE').format(_selectedDate)}  •  ${DateFormat('dd/MM/yyyy').format(_selectedDate)}',
+                  style: TextStyle(fontSize: 14, color: theme.colorScheme.onSurfaceVariant),
+                ),
+              ],
+            ),
+          ),
+          IconButton(
+            icon: const Icon(Icons.chevron_right, color: Color(0xFF1458A3)),
+            onPressed: _weekOffset < 1 ? () => _changeWeek(1) : null,
+            visualDensity: VisualDensity.compact,
+          ),
+        ],
+      ),
+    );
+  }
+
   Widget _buildDaySchedule(int dayIndex) {
     final classes = _getClassesForDay(dayIndex);
-    final theme = Theme.of(context);
 
     if (classes.isEmpty) {
       return Center(
@@ -419,10 +379,7 @@ class _StudentTimetablePageState extends State<StudentTimetablePage> with Single
             const SizedBox(height: 16),
             Text(
               'No classes scheduled',
-              style: TextStyle(
-                fontSize: 16,
-                color: Colors.grey.shade600,
-              ),
+              style: TextStyle(fontSize: 16, color: Colors.grey.shade600),
             ),
           ],
         ),
@@ -432,10 +389,7 @@ class _StudentTimetablePageState extends State<StudentTimetablePage> with Single
     return ListView.builder(
       padding: const EdgeInsets.all(16),
       itemCount: classes.length,
-      itemBuilder: (context, index) {
-        final classData = classes[index];
-        return _buildClassCard(classData, index);
-      },
+      itemBuilder: (context, index) => _buildClassCard(classes[index], index),
     );
   }
 
@@ -444,7 +398,7 @@ class _StudentTimetablePageState extends State<StudentTimetablePage> with Single
     final startTime = _formatTime(classData['startTime'] as String);
     final endTime = _formatTime(classData['endTime'] as String);
     final className = classData['className'] as String;
-    final teacherName = classData['teacherName'] as String;
+    final studentCount = classData['studentCount'] as int;
     final isReplacement = (classData['isReplacement'] as bool?) ?? false;
 
     final colors = [
@@ -462,7 +416,6 @@ class _StudentTimetablePageState extends State<StudentTimetablePage> with Single
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          // Time column
           SizedBox(
             width: 70,
             child: Column(
@@ -486,8 +439,6 @@ class _StudentTimetablePageState extends State<StudentTimetablePage> with Single
               ],
             ),
           ),
-
-          // Class card
           Expanded(
             child: Container(
               padding: const EdgeInsets.all(16),
@@ -539,19 +490,13 @@ class _StudentTimetablePageState extends State<StudentTimetablePage> with Single
                     ],
                   ),
                   const SizedBox(height: 8),
-                  // Teacher name
                   Row(
                     children: [
-                      const Icon(Icons.person, size: 16, color: Colors.white70),
+                      const Icon(Icons.people, size: 16, color: Colors.white70),
                       const SizedBox(width: 6),
-                      Expanded(
-                        child: Text(
-                          teacherName,
-                          style: const TextStyle(
-                            fontSize: 13,
-                            color: Colors.white70,
-                          ),
-                        ),
+                      Text(
+                        '$studentCount student${studentCount != 1 ? 's' : ''}',
+                        style: const TextStyle(fontSize: 13, color: Colors.white70),
                       ),
                     ],
                   ),

@@ -349,6 +349,17 @@ class _TeacherDashboardState extends State<TeacherDashboard> {
                         ),
                       ),
 
+                      // TIMETABLE TILE
+                      _teacherTile(
+                        context,
+                        'Timetable',
+                        Icons.calendar_today,
+                        const Color(0xFFFFF3E0), // Light orange
+                        const Color(0xFFEF6C00), // Dark orange
+                        Routes.login,
+                        onTap: () => Navigator.pushNamed(context, Routes.teacherTimetableView),
+                      ),
+
                       // REPLACEMENT CLASS TILE
                       _teacherTile(
                         context,

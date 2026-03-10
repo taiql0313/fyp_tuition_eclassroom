@@ -97,36 +97,31 @@ class AuthService extends ChangeNotifier {
     double? latitude;
     double? longitude;
 
-    // ========== 1. TRY DEVICE GPS (with quick timeout to avoid blocking) ==========
+    // ========== 1. TRY DEVICE GPS ==========
     if (!kIsWeb) {
       try {
         final serviceEnabled = await Geolocator.isLocationServiceEnabled()
-            .timeout(const Duration(seconds: 1), onTimeout: () => false);
+            .timeout(const Duration(seconds: 2), onTimeout: () => false);
         if (serviceEnabled) {
           var permission = await Geolocator.checkPermission()
-              .timeout(const Duration(seconds: 1), onTimeout: () => LocationPermission.denied);
+              .timeout(const Duration(seconds: 2), onTimeout: () => LocationPermission.denied);
           if (permission == LocationPermission.denied) {
-            // Skip requesting permission during user creation to avoid blocking
-            // Just use IP-based location instead
-            print('[AuthService] Location permission not granted, skipping GPS');
-          } else if (permission == LocationPermission.whileInUse ||
+            permission = await Geolocator.requestPermission()
+                .timeout(const Duration(seconds: 3), onTimeout: () => LocationPermission.denied);
+          }
+          if (permission == LocationPermission.whileInUse ||
               permission == LocationPermission.always) {
             try {
-              // Use timeLimit parameter for timeout - no need for additional timeout wrapper
               final position = await Geolocator.getCurrentPosition(
                 desiredAccuracy: LocationAccuracy.low,
-                timeLimit: const Duration(seconds: 2),
+                timeLimit: const Duration(seconds: 3),
               );
               latitude = position.latitude;
               longitude = position.longitude;
-              print('[AuthService] GPS: lat=$latitude, lon=$longitude');
             } catch (e) {
-              // This will catch TimeoutException from timeLimit or any other GPS errors
               print('[AuthService] GPS position error: $e');
             }
           }
-        } else {
-          print('[AuthService] Location service not enabled');
         }
       } catch (e) {
         print('[AuthService] GPS error: $e');
@@ -140,7 +135,7 @@ class AuthService extends ChangeNotifier {
             'https://api.bigdatacloud.net/data/reverse-geocode-client?latitude=$latitude&longitude=$longitude&localityLanguage=en';
         final response = await http
             .get(Uri.parse(url))
-            .timeout(const Duration(seconds: 2));
+            .timeout(const Duration(seconds: 5));
         if (response.statusCode == 200) {
           final data = json.decode(response.body) as Map<String, dynamic>;
           city = data['city']?.toString();
@@ -149,39 +144,32 @@ class AuthService extends ChangeNotifier {
           }
           region = data['principalSubdivision']?.toString();
           country = data['countryName']?.toString();
-          print('[AuthService] Reverse geocode: city=$city, region=$region, country=$country');
         }
       } catch (e) {
         print('[AuthService] Reverse geocode error: $e');
       }
     }
 
-    // ========== 3. FALLBACK: IP GEOLOCATION (only try first API quickly) ==========
-    // Only try the first API with a short timeout to avoid blocking
-    if (ip == null || ip.isEmpty) {
+    // ========== 3. IP GEOLOCATION with fallback APIs ==========
+    // Try multiple APIs in order until one succeeds
+    final ipApis = [
+      _tryIpApiCo,
+      _tryIpApi,
+      _tryIpify,
+    ];
+
+    for (final apiFn in ipApis) {
+      if (ip != null && ip.isNotEmpty) break;
       try {
-        final response = await http
-            .get(Uri.parse('https://ipapi.co/json/'))
-            .timeout(const Duration(seconds: 2));
-        if (response.statusCode == 200) {
-          final data = json.decode(response.body) as Map<String, dynamic>;
-          
-          ip = data['ip']?.toString();
-          
-          // Only use IP-based location if we don't have GPS location
-          if (city == null || city.isEmpty) {
-            city = data['city']?.toString();
-          }
-          if (region == null || region.isEmpty) {
-            region = data['region']?.toString();
-          }
-          if (country == null || country.isEmpty) {
-            country = data['country_name']?.toString();
-          }
-          print('[AuthService] IP API: ip=$ip, city=$city, region=$region, country=$country');
+        final result = await apiFn();
+        if (result != null) {
+          ip = result['ip'];
+          if (city == null || city.isEmpty) city = result['city'];
+          if (region == null || region.isEmpty) region = result['region'];
+          if (country == null || country.isEmpty) country = result['country'];
         }
       } catch (e) {
-        print('[AuthService] IP API error: $e');
+        print('[AuthService] IP API fallback error: $e');
       }
     }
 
@@ -189,14 +177,64 @@ class AuthService extends ChangeNotifier {
       'device': platform,
       'platform': platform,
     };
-    
+
     if (ip != null && ip.isNotEmpty) result['ipAddress'] = ip;
     if (city != null && city.isNotEmpty) result['city'] = city;
     if (region != null && region.isNotEmpty) result['region'] = region;
     if (country != null && country.isNotEmpty) result['country'] = country;
-    
+
     print('[AuthService] Final context: $result');
     return result;
+  }
+
+  Future<Map<String, String>?> _tryIpApiCo() async {
+    final response = await http
+        .get(Uri.parse('https://ipapi.co/json/'))
+        .timeout(const Duration(seconds: 5));
+    if (response.statusCode == 200) {
+      final data = json.decode(response.body) as Map<String, dynamic>;
+      if (data.containsKey('error')) return null;
+      return {
+        'ip': data['ip']?.toString() ?? '',
+        'city': data['city']?.toString() ?? '',
+        'region': data['region']?.toString() ?? '',
+        'country': data['country_name']?.toString() ?? '',
+      };
+    }
+    return null;
+  }
+
+  Future<Map<String, String>?> _tryIpApi() async {
+    final response = await http
+        .get(Uri.parse('http://ip-api.com/json/?fields=query,city,regionName,country'))
+        .timeout(const Duration(seconds: 5));
+    if (response.statusCode == 200) {
+      final data = json.decode(response.body) as Map<String, dynamic>;
+      if (data['status'] == 'fail') return null;
+      return {
+        'ip': data['query']?.toString() ?? '',
+        'city': data['city']?.toString() ?? '',
+        'region': data['regionName']?.toString() ?? '',
+        'country': data['country']?.toString() ?? '',
+      };
+    }
+    return null;
+  }
+
+  Future<Map<String, String>?> _tryIpify() async {
+    final response = await http
+        .get(Uri.parse('https://api64.ipify.org?format=json'))
+        .timeout(const Duration(seconds: 5));
+    if (response.statusCode == 200) {
+      final data = json.decode(response.body) as Map<String, dynamic>;
+      return {
+        'ip': data['ip']?.toString() ?? '',
+        'city': '',
+        'region': '',
+        'country': '',
+      };
+    }
+    return null;
   }
 
   Future<Map<String, String>> _getUserInfo(String uid, {String? fallback}) async {
