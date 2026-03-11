@@ -411,6 +411,10 @@ class _StudentDashboardState extends State<StudentDashboard> {
 
   // --- ANNOUNCEMENTS DESIGN (STREAM) ---
   Widget _buildAnnouncementsSection() {
+    final auth = context.read<AuthService>();
+    final user = auth.currentUser;
+    final userId = user?.uid;
+
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -425,27 +429,73 @@ class _StudentDashboardState extends State<StudentDashboard> {
           ],
         ),
         const SizedBox(height: 12),
-        StreamBuilder<QuerySnapshot>(
-          stream: _announcementService.streamRecentAnnouncements(),
-          builder: (context, snapshot) {
-            if (snapshot.connectionState == ConnectionState.waiting) return const LinearProgressIndicator();
-            final docs = snapshot.data?.docs ?? [];
-            if (docs.isEmpty) return const Text("No announcements.");
+        if (userId == null)
+          const Text("No announcements.")
+        else
+          StreamBuilder<DocumentSnapshot>(
+            stream: FirebaseFirestore.instance.collection('users').doc(userId).snapshots(),
+            builder: (context, userSnap) {
+              if (userSnap.connectionState == ConnectionState.waiting) {
+                return const LinearProgressIndicator();
+              }
+              if (!userSnap.hasData || !userSnap.data!.exists) {
+                return const Text("No announcements.");
+              }
 
-            return SizedBox(
-              height: 180,
-              child: ListView.separated(
-                scrollDirection: Axis.horizontal,
-                itemCount: docs.length,
-                separatorBuilder: (_, __) => const SizedBox(width: 16),
-                itemBuilder: (context, index) {
-                  final data = docs[index].data() as Map<String, dynamic>;
-                  return _buildAnnouncementCard(data);
+              final data = userSnap.data!.data() as Map<String, dynamic>?;
+              final classIds = List<String>.from(data?['classIds'] ?? []);
+
+              if (classIds.isEmpty) {
+                return const Text("No announcements. Join a class to see updates.");
+              }
+
+              final limitedClassIds = classIds.length > 10 ? classIds.sublist(0, 10) : classIds;
+
+              return StreamBuilder<QuerySnapshot>(
+                stream: FirebaseFirestore.instance
+                    .collection('announcements')
+                    .where('classId', whereIn: limitedClassIds)
+                    .snapshots(),
+                builder: (context, snapshot) {
+                  if (snapshot.connectionState == ConnectionState.waiting) {
+                    return const LinearProgressIndicator();
+                  }
+                  if (snapshot.hasError) {
+                    return Text("Unable to load announcements.",
+                        style: TextStyle(color: Theme.of(context).colorScheme.error));
+                  }
+                  final docs = snapshot.data?.docs ?? [];
+                  if (docs.isEmpty) {
+                    return const Text("No announcements for your classes.");
+                  }
+
+                  docs.sort((a, b) {
+                    final tsA = (a.data() as Map<String, dynamic>)['timestamp'] as Timestamp?;
+                    final tsB = (b.data() as Map<String, dynamic>)['timestamp'] as Timestamp?;
+                    if (tsA == null && tsB == null) return 0;
+                    if (tsA == null) return 1;
+                    if (tsB == null) return -1;
+                    return tsB.compareTo(tsA);
+                  });
+
+                  final limited = docs.length > 3 ? docs.sublist(0, 3) : docs;
+
+                  return SizedBox(
+                    height: 180,
+                    child: ListView.separated(
+                      scrollDirection: Axis.horizontal,
+                      itemCount: limited.length,
+                      separatorBuilder: (_, __) => const SizedBox(width: 16),
+                      itemBuilder: (context, index) {
+                        final data = limited[index].data() as Map<String, dynamic>;
+                        return _buildAnnouncementCard(data);
+                      },
+                    ),
+                  );
                 },
-              ),
-            );
-          },
-        ),
+              );
+            },
+          ),
       ],
     );
   }

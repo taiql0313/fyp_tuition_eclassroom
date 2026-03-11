@@ -133,11 +133,24 @@ class _PaymentManagementPageState extends State<PaymentManagementPage>
         ),
         IconButton(
           icon: const Icon(Icons.refresh),
-          tooltip: "Generate Monthly Invoices (All Students)",
-          onPressed: _generateMonthlyInvoices,
+          tooltip: "Refresh",
+          onPressed: _refreshAll,
         ),
       ],
     );
+  }
+
+  void _refreshAll() {
+    // Clear invoice filters and search
+    _invoiceSearchController.clear();
+    _clearInvoiceFilters();
+
+    // Clear transaction filters and search
+    _transactionSearchController.clear();
+    _clearTransactionFilters();
+
+    // Force rebuild (streams stay attached and will show latest data)
+    setState(() {});
   }
 
   Future<void> _generateMonthlyInvoices() async {
@@ -1538,16 +1551,24 @@ class _PaymentManagementPageState extends State<PaymentManagementPage>
             child: const Text("Close"),
           ),
           if (invoice.status == 'pending' || invoice.status == 'overdue')
-            ElevatedButton(
+            ElevatedButton.icon(
               onPressed: () => _showRecordManualPayment(invoice),
-              style: ElevatedButton.styleFrom(backgroundColor: _primaryColor),
-              child: const Text("Record Payment"),
+              icon: const Icon(Icons.payments_outlined, size: 18),
+              label: const Text("Record Payment"),
+              style: ElevatedButton.styleFrom(
+                backgroundColor: _primaryColor,
+                foregroundColor: Colors.white,
+              ),
             ),
           if (invoice.status == 'paid')
-            ElevatedButton(
+            ElevatedButton.icon(
               onPressed: () => _exportInvoicePDF(invoice),
-              style: ElevatedButton.styleFrom(backgroundColor: _primaryColor),
-              child: const Text("Export PDF"),
+              icon: const Icon(Icons.picture_as_pdf, size: 18),
+              label: const Text("Export PDF"),
+              style: ElevatedButton.styleFrom(
+                backgroundColor: _primaryColor,
+                foregroundColor: Colors.white,
+              ),
             ),
         ],
       ),
@@ -1609,7 +1630,10 @@ class _PaymentManagementPageState extends State<PaymentManagementPage>
                 }
               }
             },
-            style: ElevatedButton.styleFrom(backgroundColor: _primaryColor),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: _primaryColor,
+              foregroundColor: Colors.white,
+            ),
             child: const Text("Record"),
           ),
         ],

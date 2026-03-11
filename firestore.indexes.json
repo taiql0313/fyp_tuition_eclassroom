@@ -51,6 +51,15 @@
         { "fieldPath": "role", "order": "ASCENDING" }
       ]
     }
+    ,
+    {
+      "collectionGroup": "announcements",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "classId", "order": "ASCENDING" },
+        { "fieldPath": "timestamp", "order": "DESCENDING" }
+      ]
+    }
   ],
   "fieldOverrides": []
 }

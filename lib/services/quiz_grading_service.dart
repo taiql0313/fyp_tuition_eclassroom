@@ -3,16 +3,14 @@ import 'package:http/http.dart' as http;
 import '../config/api_config.dart';
 
 /// Service for auto-grading Short Answer questions using Groq API
-/// 使用 Groq API 自动评分简答题的服务
 class QuizGradingService {
   static const int _maxRetries = 2;
-  static const int _shortAnswerMaxScore = 2; // 2 marks per short answer / 每个简答题 2 分
+  static const int _shortAnswerMaxScore = 2; // 2 marks per short answer
 
   /// Grade a single Short Answer question
-  /// 评分单个简答题
   /// 
   /// Returns: Map with 'score' (0-2), 'feedback' (String), 'status' ('graded' or 'pending_grading')
-  /// 返回：包含 'score' (0-2)、'feedback' (String)、'status' ('graded' 或 'pending_grading') 的 Map
+
   Future<Map<String, dynamic>> gradeShortAnswer({
     required String question,
     required String studentAnswer,
@@ -20,7 +18,7 @@ class QuizGradingService {
     String? quizTitle,
     String? subject,
   }) async {
-    // Build context for the AI / 为 AI 构建上下文
+    // Build context for the AI
     String contextPrompt = _buildGradingPrompt(
       question: question,
       studentAnswer: studentAnswer,

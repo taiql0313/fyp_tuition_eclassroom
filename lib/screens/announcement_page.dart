@@ -1,4 +1,5 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:fyp_tuition_eclassroom/services/announcement_service.dart';
 import 'package:intl/intl.dart'; // Add intl package to pubspec.yaml for dates
@@ -9,32 +10,81 @@ class AnnouncementsPage extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final service = AnnouncementService();
+    final currentUser = FirebaseAuth.instance.currentUser;
 
     return Scaffold(
       appBar: AppBar(title: const Text("Announcements")),
-      body: StreamBuilder<QuerySnapshot>(
-        stream: service.streamAnnouncements(),
-        builder: (context, snapshot) {
-          if (snapshot.connectionState == ConnectionState.waiting) {
-            return const Center(child: CircularProgressIndicator());
-          }
+      body: currentUser == null
+          ? const Center(child: Text("No announcements yet."))
+          : StreamBuilder<DocumentSnapshot>(
+              stream: FirebaseFirestore.instance.collection('users').doc(currentUser.uid).snapshots(),
+              builder: (context, userSnap) {
+                if (userSnap.connectionState == ConnectionState.waiting) {
+                  return const Center(child: CircularProgressIndicator());
+                }
 
-          final docs = snapshot.data?.docs ?? [];
+                if (!userSnap.hasData || !userSnap.data!.exists) {
+                  return const Center(child: Text("No announcements yet."));
+                }
 
-          if (docs.isEmpty) {
-            return const Center(child: Text("No announcements yet."));
-          }
+                final data = userSnap.data!.data() as Map<String, dynamic>?;
+                final classIds = List<String>.from(data?['classIds'] ?? []);
 
-          return ListView.builder(
-            padding: const EdgeInsets.all(16),
-            itemCount: docs.length,
-            itemBuilder: (context, index) {
-              final data = docs[index].data() as Map<String, dynamic>;
-              return _buildCard(data);
-            },
-          );
-        },
-      ),
+                if (classIds.isEmpty) {
+                  return const Center(
+                    child: Padding(
+                      padding: EdgeInsets.all(24),
+                      child: Text(
+                        "No announcements. Join a class to see updates from your teachers.",
+                        textAlign: TextAlign.center,
+                      ),
+                    ),
+                  );
+                }
+
+                // Firestore whereIn limit is 10; for the full page we'll paginate by first 10
+                final limitedClassIds = classIds.length > 10 ? classIds.sublist(0, 10) : classIds;
+
+                return StreamBuilder<QuerySnapshot>(
+                  stream: FirebaseFirestore.instance
+                      .collection('announcements')
+                      .where('classId', whereIn: limitedClassIds)
+                      .snapshots(),
+                  builder: (context, snapshot) {
+                    if (snapshot.connectionState == ConnectionState.waiting) {
+                      return const Center(child: CircularProgressIndicator());
+                    }
+                    if (snapshot.hasError) {
+                      return const Center(child: Text("Unable to load announcements."));
+                    }
+
+                    final docs = snapshot.data?.docs ?? [];
+
+                    if (docs.isEmpty) {
+                      return const Center(child: Text("No announcements for your classes yet."));
+                    }
+
+                    docs.sort((a, b) {
+                      final tsA = (a.data() as Map<String, dynamic>)['timestamp'] as Timestamp?;
+                      final tsB = (b.data() as Map<String, dynamic>)['timestamp'] as Timestamp?;
+                      if (tsA == null && tsB == null) return 0;
+                      if (tsA == null) return 1;
+                      if (tsB == null) return -1;
+                      return tsB.compareTo(tsA);
+                    });
+
+                    return ListView.builder(
+                      padding: const EdgeInsets.all(16),
+                      itemCount: docs.length,
+                      itemBuilder: (context, index) {
+                        final data = docs[index].data() as Map<String, dynamic>;
+                        return _buildCard(data);
+                      },
+                    );
+                  },
+                );
+              },
+            ),
     );
   }
 

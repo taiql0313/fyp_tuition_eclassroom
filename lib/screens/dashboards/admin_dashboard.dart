@@ -194,8 +194,6 @@ class AdminDashboard extends StatelessWidget {
                       Navigator.push(context, MaterialPageRoute(builder: (_) => const SystemLogPage()));
                     }),
 
-                    _adminTile(context, 'Settings', Icons.settings_outlined, Colors.grey),
-
                     // TIMETABLE APPROVAL TILE with badge
                     StreamBuilder<QuerySnapshot>(
                       stream: FirebaseFirestore.instance
