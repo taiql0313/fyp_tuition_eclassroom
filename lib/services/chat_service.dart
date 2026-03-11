@@ -3,7 +3,7 @@ import 'package:http/http.dart' as http;
 import '../config/api_config.dart';
 
 class ChatService {
-  // Now using centralized API config / 现在使用集中式 API 配置
+  // Now using centralized API config
   static const apiKey = ApiConfig.groqApiKey;
   static const apiUrl = ApiConfig.groqApiUrl;
 

@@ -9,8 +9,6 @@ class EmailService {
   static final FirebaseFirestore _db = FirebaseFirestore.instance;
 
   // ─── SMTP CONFIG ───
-  // Use a Gmail account with an App Password (not your real password).
-  // Generate one at: https://myaccount.google.com/apppasswords
   static const String _smtpEmail = 'gohmunchen@gmail.com';
   static const String _smtpPassword = 'ccgttnppkxlciviw';
   static const String _senderName = 'Tuition E-Classroom';
@@ -22,7 +20,7 @@ class EmailService {
     required PaymentTransaction transaction,
     required Invoice invoice,
   }) async {
-    if (_smtpEmail == 'YOUR_GMAIL@gmail.com') {
+    if (_smtpEmail == 'gohmunchen@gmail.com') {
       print('EmailService: SMTP not configured — skipping email send.');
       return;
     }
