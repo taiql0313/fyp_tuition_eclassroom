@@ -369,8 +369,11 @@ class _PaymentManagementPageState extends State<PaymentManagementPage>
     final pendingCount = _allInvoices.where((i) => i.status == 'pending').length;
     final paidCount = _allInvoices.where((i) => i.status == 'paid').length;
     final overdueCount = _allInvoices.where((i) => i.status == 'overdue').length;
-    final totalRevenue =
-        _allInvoices.where((i) => i.status == 'paid').fold(0.0, (sum, i) => sum + i.totalAmount);
+    // Total revenue should always be based on completed transactions (all time),
+    // consistent with PaymentReportPage and AdminDashboard.
+    final totalRevenue = _allTransactions
+        .where((t) => t.status == 'completed')
+        .fold(0.0, (sum, t) => sum + t.amount);
 
     return Column(
       children: [
@@ -1713,7 +1716,10 @@ class _PaymentManagementPageState extends State<PaymentManagementPage>
   Future<void> _exportPaymentReport(List<Invoice> invoices, List<PaymentTransaction> transactions) async {
     final pdf = pw.Document();
 
-    final totalRevenue = invoices.where((i) => i.status == 'paid').fold(0.0, (sum, i) => sum + i.totalAmount);
+    // Use completed transactions for total revenue, to match on-screen stats
+    final totalRevenue = transactions
+        .where((t) => t.status == 'completed')
+        .fold(0.0, (sum, t) => sum + t.amount);
     final pendingAmount = invoices.where((i) => i.status == 'pending').fold(0.0, (sum, i) => sum + i.totalAmount);
     final overdueAmount = invoices.where((i) => i.status == 'overdue').fold(0.0, (sum, i) => sum + i.totalAmount);
     final paidCount = invoices.where((i) => i.status == 'paid').length;

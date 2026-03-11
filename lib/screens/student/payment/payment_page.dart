@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import 'package:fyp_tuition_eclassroom/utils/timezone_helper.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:fyp_tuition_eclassroom/services/payment_service.dart';
@@ -286,7 +287,7 @@ class _PaymentPageState extends State<PaymentPage> {
   }
 
   Future<void> _handleBlockchainPayment(Invoice invoice) async {
-    final result = await Navigator.push<bool>(
+    final result = await Navigator.push<Map<String, dynamic>?>(
       context,
       MaterialPageRoute(
         builder: (_) => _BlockchainPaymentPage(
@@ -296,10 +297,27 @@ class _PaymentPageState extends State<PaymentPage> {
       ),
     );
 
-    if (result == true && mounted) {
+    if (result != null && result['success'] == true && mounted) {
+      final String? txId = result['transactionId'] as String?;
+      if (txId != null) {
+        try {
+          final txDoc = await FirebaseFirestore.instance
+              .collection('payment_transactions')
+              .doc(txId)
+              .get();
+          if (txDoc.exists) {
+            final txData = txDoc.data()!;
+            final tx = PaymentTransaction.fromMap(txDoc.id, txData);
+            await EmailService.sendReceiptForTransaction(tx);
+          }
+        } catch (e) {
+          print('Failed to send blockchain receipt email: $e');
+        }
+      }
+
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
-          content: Text("Blockchain payment completed successfully!"),
+          content: Text("Blockchain payment completed successfully! Receipt sent to your email."),
           backgroundColor: Colors.green,
           duration: Duration(seconds: 4),
         ),
@@ -915,7 +933,12 @@ class _BlockchainPaymentPageState extends State<_BlockchainPaymentPage> {
         ),
       );
 
-      if (mounted) Navigator.pop(context, true);
+      if (mounted) {
+        Navigator.pop(context, {
+          'success': true,
+          'transactionId': result['transactionId'],
+        });
+      }
     } catch (e) {
       if (!mounted) return;
       setState(() => _isProcessing = false);

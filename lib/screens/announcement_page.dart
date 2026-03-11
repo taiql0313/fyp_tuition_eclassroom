@@ -30,25 +30,10 @@ class AnnouncementsPage extends StatelessWidget {
                 final data = userSnap.data!.data() as Map<String, dynamic>?;
                 final classIds = List<String>.from(data?['classIds'] ?? []);
 
-                if (classIds.isEmpty) {
-                  return const Center(
-                    child: Padding(
-                      padding: EdgeInsets.all(24),
-                      child: Text(
-                        "No announcements. Join a class to see updates from your teachers.",
-                        textAlign: TextAlign.center,
-                      ),
-                    ),
-                  );
-                }
-
-                // Firestore whereIn limit is 10; for the full page we'll paginate by first 10
-                final limitedClassIds = classIds.length > 10 ? classIds.sublist(0, 10) : classIds;
-
                 return StreamBuilder<QuerySnapshot>(
                   stream: FirebaseFirestore.instance
                       .collection('announcements')
-                      .where('classId', whereIn: limitedClassIds)
+                      .orderBy('timestamp', descending: true)
                       .snapshots(),
                   builder: (context, snapshot) {
                     if (snapshot.connectionState == ConnectionState.waiting) {
@@ -58,10 +43,22 @@ class AnnouncementsPage extends StatelessWidget {
                       return const Center(child: Text("Unable to load announcements."));
                     }
 
-                    final docs = snapshot.data?.docs ?? [];
+                    final allDocs = snapshot.data?.docs ?? [];
+
+                    // Show:
+                    // - Global announcements (classId == null)
+                    // - Class-specific announcements for any of the student's classes
+                    final docs = allDocs.where((doc) {
+                      final d = doc.data() as Map<String, dynamic>;
+                      final classId = d['classId'] as String?;
+                      if (classId == null || classId.isEmpty) {
+                        return true; // global / system-wide
+                      }
+                      return classIds.contains(classId);
+                    }).toList();
 
                     if (docs.isEmpty) {
-                      return const Center(child: Text("No announcements for your classes yet."));
+                      return const Center(child: Text("No announcements yet."));
                     }
 
                     docs.sort((a, b) {
@@ -96,6 +93,11 @@ class AnnouncementsPage extends StatelessWidget {
     final Timestamp? ts = data['timestamp'];
     final dateStr = ts != null ? DateFormat('MMM d, h:mm a').format(ts.toDate()) : 'Just now';
 
+    final String? classId = data['classId'] as String?;
+    final bool isSystemAnnouncement = classId == null || classId.isEmpty;
+    final String categoryLabel =
+        isSystemAnnouncement ? 'SYSTEM ANNOUNCEMENT' : 'CLASS ANNOUNCEMENT';
+
     Color cardColor;
     IconData icon;
 
@@ -127,9 +129,19 @@ class AnnouncementsPage extends StatelessWidget {
               children: [
                 Icon(icon, color: Colors.black54),
                 const SizedBox(width: 8),
-                Text(type.toUpperCase(), style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 12, color: Colors.black54)),
+                Text(
+                  '$categoryLabel • ${type.toString().toUpperCase()}',
+                  style: const TextStyle(
+                    fontWeight: FontWeight.bold,
+                    fontSize: 12,
+                    color: Colors.black54,
+                  ),
+                ),
                 const Spacer(),
-                Text(dateStr, style: const TextStyle(fontSize: 12, color: Colors.grey)),
+                Text(
+                  dateStr,
+                  style: const TextStyle(fontSize: 12, color: Colors.grey),
+                ),
               ],
             ),
             const SizedBox(height: 8),

@@ -31,8 +31,6 @@ class _AttendanceReportPageState extends State<AttendanceReportPage> {
   List<Map<String, dynamic>> _students = [];
   List<Map<String, dynamic>> _classes = [];
   List<AttendanceRecord> _allRecords = [];
-  Map<String, int> _chartData = {};
-  String _chartPeriod = 'Daily'; // 'Daily', 'Weekly', 'Monthly'
 
   // Stats
   int _avgAttendance = 0;
@@ -191,7 +189,7 @@ class _AttendanceReportPageState extends State<AttendanceReportPage> {
           ? (totalRate / studentsWithStats.length).round()
           : 0;
 
-      // Load ALL attendance records for tracking breakdown and charts
+      // Load ALL attendance records for tracking breakdown
       final allRecordsSnapshot = await _db.collection('attendance_records').get();
       final allRecords = allRecordsSnapshot.docs
           .map((doc) => AttendanceRecord.fromMap(doc.id, doc.data()))
@@ -223,10 +221,6 @@ class _AttendanceReportPageState extends State<AttendanceReportPage> {
         }
       }
 
-      // Load chart data based on period (Malaysia time)
-      _allRecords = allRecords;
-      final chartData = _loadChartData();
-
       setState(() {
         _students = studentsWithStats;
         _classes = classes;
@@ -234,7 +228,6 @@ class _AttendanceReportPageState extends State<AttendanceReportPage> {
         _lowAttendanceCount = lowAttendance;
         _totalRecords = totalRecords;
         _allRecords = allRecords;
-        _chartData = chartData;
         _studentTakenCount = studentTaken;
         _teacherTakenCount = teacherTaken;
         _presentCount = presentTotal;
@@ -246,79 +239,6 @@ class _AttendanceReportPageState extends State<AttendanceReportPage> {
       print('Error loading attendance data: $e');
       setState(() => _loading = false);
     }
-  }
-
-  Map<String, int> _loadChartData() {
-    if (_allRecords.isEmpty) return {};
-
-    final now = TimezoneHelper.getMalaysiaTime();
-    final startOfToday =
-        TimezoneHelper.createMalaysiaDateTime(now.year, now.month, now.day, 0, 0);
-
-    Map<String, int> chartData = {};
-
-    if (_chartPeriod == 'Daily') {
-      // Last 7 days
-      for (int i = 6; i >= 0; i--) {
-        final dayStart = startOfToday.subtract(Duration(days: i));
-        final dayEnd = dayStart.add(const Duration(hours: 23, minutes: 59, seconds: 59));
-        final labelDate = TimezoneHelper.toMalaysiaTime(dayStart);
-        final dayKey = DateFormat('EEE').format(labelDate);
-
-        chartData[dayKey] = _calculateAttendanceRate(dayStart, dayEnd);
-      }
-    } else if (_chartPeriod == 'Weekly') {
-      // Last 4 weeks
-      for (int i = 3; i >= 0; i--) {
-        final weekStart = startOfToday.subtract(Duration(days: (i * 7) + 6));
-        final weekEnd = startOfToday
-            .subtract(Duration(days: i * 7))
-            .add(const Duration(hours: 23, minutes: 59, seconds: 59));
-        final weekKey = 'Wk${4 - i}';
-
-        chartData[weekKey] = _calculateAttendanceRate(weekStart, weekEnd);
-      }
-    } else {
-      // Monthly - Last 6 months
-      for (int i = 5; i >= 0; i--) {
-        final monthStart =
-            TimezoneHelper.createMalaysiaDateTime(now.year, now.month - i, 1, 0, 0);
-        final monthEnd = TimezoneHelper.createMalaysiaDateTime(
-                now.year, now.month - i + 1, 1, 0, 0)
-            .subtract(const Duration(seconds: 1));
-        final labelDate = TimezoneHelper.toMalaysiaTime(monthStart);
-        final monthKey = DateFormat('MMM').format(labelDate);
-
-        chartData[monthKey] = _calculateAttendanceRate(monthStart, monthEnd);
-      }
-    }
-
-    return chartData;
-  }
-
-  int _calculateAttendanceRate(DateTime start, DateTime end) {
-    int presentCount = 0;
-    int totalCount = 0;
-
-    for (var record in _allRecords) {
-      final malaysiaTime = TimezoneHelper.toMalaysiaTime(record.timestamp);
-      if (malaysiaTime.isBefore(start) || malaysiaTime.isAfter(end)) {
-        continue;
-      }
-      totalCount++;
-      if (record.status == 'present' || record.status == 'excused') {
-        presentCount++;
-      }
-    }
-
-    return totalCount > 0 ? ((presentCount / totalCount) * 100).round() : 0;
-  }
-
-  void _changeChartPeriod(String period) {
-    setState(() {
-      _chartPeriod = period;
-      _chartData = _loadChartData();
-    });
   }
 
   List<Map<String, dynamic>> get _filteredStudents {
@@ -525,10 +445,6 @@ class _AttendanceReportPageState extends State<AttendanceReportPage> {
                       ],
                     ),
                     const SizedBox(height: 24),
-
-                    // Attendance Chart with Period Selector
-                    _buildAttendanceChart(),
-                    const SizedBox(height: 24),
                     
                     // Tracking Breakdown
                     _buildTrackingBreakdown(),
@@ -656,103 +572,6 @@ class _AttendanceReportPageState extends State<AttendanceReportPage> {
             style: TextStyle(
               fontSize: 13,
               color: Colors.grey.shade600,
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildAttendanceChart() {
-    return Container(
-      padding: const EdgeInsets.all(20),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(16),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withOpacity(0.04),
-            blurRadius: 8,
-            offset: const Offset(0, 2),
-          ),
-        ],
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: [
-              const Text(
-                "Attendance Trend",
-                style: TextStyle(fontWeight: FontWeight.w600, fontSize: 15),
-              ),
-              // Period selector
-              Container(
-                padding: const EdgeInsets.symmetric(horizontal: 4),
-                decoration: BoxDecoration(
-                  color: Colors.grey.shade100,
-                  borderRadius: BorderRadius.circular(8),
-                ),
-                child: Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: ['Daily', 'Weekly', 'Monthly'].map((period) {
-                    final isSelected = _chartPeriod == period;
-                    return InkWell(
-                      onTap: () => _changeChartPeriod(period),
-                      borderRadius: BorderRadius.circular(6),
-                      child: Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-                        decoration: BoxDecoration(
-                          color: isSelected ? _accentColor : Colors.transparent,
-                          borderRadius: BorderRadius.circular(6),
-                        ),
-                        child: Text(
-                          period,
-                          style: TextStyle(
-                            fontSize: 11,
-                            fontWeight: FontWeight.w500,
-                            color: isSelected ? Colors.white : Colors.grey.shade600,
-                          ),
-                        ),
-                      ),
-                    );
-                  }).toList(),
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 20),
-          SizedBox(
-            height: 180,
-            child: _chartData.isEmpty
-                ? Center(
-                    child: Text(
-                      'No data available',
-                      style: TextStyle(color: Colors.grey.shade400),
-                    ),
-                  )
-                : Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-                    crossAxisAlignment: CrossAxisAlignment.end,
-                    children: _chartData.entries.map((entry) {
-                      final pct = entry.value / 100;
-                      return _buildChartBar(entry.key, pct);
-                    }).toList(),
-                  ),
-          ),
-          const SizedBox(height: 16),
-          SizedBox(
-            width: double.infinity,
-            child: OutlinedButton.icon(
-              onPressed: _exportPdf,
-              icon: const Icon(Icons.picture_as_pdf, size: 18),
-              label: const Text("Export Attendance Report"),
-              style: OutlinedButton.styleFrom(
-                padding: const EdgeInsets.symmetric(vertical: 12),
-                side: BorderSide(color: _accentColor),
-                foregroundColor: _accentColor,
-              ),
             ),
           ),
         ],
@@ -929,44 +748,6 @@ class _AttendanceReportPageState extends State<AttendanceReportPage> {
           ),
         ],
       ),
-    );
-  }
-
-  Widget _buildChartBar(String label, double pct) {
-    return Column(
-      mainAxisAlignment: MainAxisAlignment.end,
-      children: [
-        Text(
-          '${(pct * 100).toInt()}%',
-          style: TextStyle(
-            fontSize: 10,
-            fontWeight: FontWeight.w600,
-            color: _accentColor,
-          ),
-        ),
-        const SizedBox(height: 6),
-        Container(
-          height: (120 * pct).clamp(4.0, 120.0),
-          width: 20,
-          decoration: BoxDecoration(
-            gradient: LinearGradient(
-              colors: [_accentColor.withOpacity(0.6), _accentColor],
-              begin: Alignment.bottomCenter,
-              end: Alignment.topCenter,
-            ),
-            borderRadius: BorderRadius.circular(6),
-          ),
-        ),
-        const SizedBox(height: 8),
-        Text(
-          label,
-          style: TextStyle(
-            fontSize: 11,
-            color: Colors.grey.shade600,
-            fontWeight: FontWeight.w500,
-          ),
-        ),
-      ],
     );
   }
 

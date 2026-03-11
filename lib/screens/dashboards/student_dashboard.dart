@@ -445,16 +445,10 @@ class _StudentDashboardState extends State<StudentDashboard> {
               final data = userSnap.data!.data() as Map<String, dynamic>?;
               final classIds = List<String>.from(data?['classIds'] ?? []);
 
-              if (classIds.isEmpty) {
-                return const Text("No announcements. Join a class to see updates.");
-              }
-
-              final limitedClassIds = classIds.length > 10 ? classIds.sublist(0, 10) : classIds;
-
               return StreamBuilder<QuerySnapshot>(
                 stream: FirebaseFirestore.instance
                     .collection('announcements')
-                    .where('classId', whereIn: limitedClassIds)
+                    .orderBy('timestamp', descending: true)
                     .snapshots(),
                 builder: (context, snapshot) {
                   if (snapshot.connectionState == ConnectionState.waiting) {
@@ -464,19 +458,20 @@ class _StudentDashboardState extends State<StudentDashboard> {
                     return Text("Unable to load announcements.",
                         style: TextStyle(color: Theme.of(context).colorScheme.error));
                   }
-                  final docs = snapshot.data?.docs ?? [];
-                  if (docs.isEmpty) {
-                    return const Text("No announcements for your classes.");
-                  }
+                  final allDocs = snapshot.data?.docs ?? [];
 
-                  docs.sort((a, b) {
-                    final tsA = (a.data() as Map<String, dynamic>)['timestamp'] as Timestamp?;
-                    final tsB = (b.data() as Map<String, dynamic>)['timestamp'] as Timestamp?;
-                    if (tsA == null && tsB == null) return 0;
-                    if (tsA == null) return 1;
-                    if (tsB == null) return -1;
-                    return tsB.compareTo(tsA);
-                  });
+                  final docs = allDocs.where((doc) {
+                    final d = doc.data() as Map<String, dynamic>;
+                    final classId = d['classId'] as String?;
+                    if (classId == null || classId.isEmpty) {
+                      return true; // system-wide announcement
+                    }
+                    return classIds.contains(classId);
+                  }).toList();
+
+                  if (docs.isEmpty) {
+                    return const Text("No announcements yet.");
+                  }
 
                   final limited = docs.length > 3 ? docs.sublist(0, 3) : docs;
 
@@ -502,6 +497,10 @@ class _StudentDashboardState extends State<StudentDashboard> {
 
   Widget _buildAnnouncementCard(Map<String, dynamic> data) {
     final theme = Theme.of(context);
+    final String? classId = data['classId'] as String?;
+    final bool isSystemAnnouncement = classId == null || classId.isEmpty;
+    final String categoryLabel =
+        isSystemAnnouncement ? 'SYSTEM ANNOUNCEMENT' : 'CLASS ANNOUNCEMENT';
     return Container(
       width: 280,
       padding: const EdgeInsets.all(20),
@@ -516,7 +515,7 @@ class _StudentDashboardState extends State<StudentDashboard> {
           Container(
             padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
             decoration: BoxDecoration(color: Colors.blue.withOpacity(0.2), borderRadius: BorderRadius.circular(20)),
-            child: Text(data['type']?.toString().toUpperCase() ?? 'NOTICE',
+            child: Text(categoryLabel,
                 style: const TextStyle(color: Colors.blue, fontSize: 11, fontWeight: FontWeight.bold)),
           ),
           const SizedBox(height: 16),

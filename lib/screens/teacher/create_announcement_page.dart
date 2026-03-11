@@ -1,3 +1,4 @@
+import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../../services/auth_service.dart';
@@ -38,55 +39,90 @@ class _CreateAnnouncementPageState extends State<CreateAnnouncementPage> {
 
     setState(() => _loading = true);
 
-    final user = context.read<AuthService>().currentUser;
-    final authorName = user?.displayName ?? "Teacher";
-    final teacherName = authorName; // Use same name for teacherName
+    try {
+      final user = context.read<AuthService>().currentUser;
+      if (user == null) {
+        throw Exception('You must be logged in to post announcements.');
+      }
 
-    await _service.postAnnouncement(
-      title: _title,
-      content: _content,
-      type: _type,
-      authorName: authorName,
-      classId: widget.classId, // Pass classId if provided
-      teacherName: teacherName,
-    );
+      // Verify user role before attempting write
+      final userDoc = await FirebaseFirestore.instance
+          .collection('users')
+          .doc(user.uid)
+          .get();
+      final role = userDoc.data()?['role'] as String? ?? '';
+      if (role != 'teacher' && role != 'admin') {
+        throw Exception(
+            'Permission denied. Your role "$role" cannot post announcements.');
+      }
 
-    // Notify students: class-specific or all students
-    final shortContent = _content.length > 80 ? '${_content.substring(0, 80)}...' : _content;
-    if (widget.classId != null && widget.classId!.isNotEmpty) {
-      await _notificationService.createForStudentsInClass(
-        classId: widget.classId!,
-        type: 'announcement',
+      final authorName = user.displayName ?? (role == 'admin' ? 'Admin' : 'Teacher');
+
+      await _service.postAnnouncement(
         title: _title,
-        message: shortContent,
+        content: _content,
+        type: _type,
+        authorName: authorName,
+        classId: widget.classId,
+        teacherName: authorName,
       );
-    } else {
-      await _notificationService.createForAllStudents(
-        type: 'announcement',
-        title: _title,
-        message: shortContent,
-      );
-    }
 
-    setState(() => _loading = false);
-    if (!mounted) return;
-    Navigator.pop(context);
+      // Notify students: class-specific or all students
+      final shortContent =
+          _content.length > 80 ? '${_content.substring(0, 80)}...' : _content;
+      if (widget.classId != null && widget.classId!.isNotEmpty) {
+        await _notificationService.createForStudentsInClass(
+          classId: widget.classId!,
+          type: 'announcement',
+          title: _title,
+          message: shortContent,
+        );
+      } else {
+        await _notificationService.createForAllStudents(
+          type: 'announcement',
+          title: _title,
+          message: shortContent,
+        );
+      }
 
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Row(
-          children: const [
-            Icon(Icons.check_circle, color: Colors.white, size: 20),
-            SizedBox(width: 12),
-            Text("Announcement posted successfully!"),
-          ],
+      if (!mounted) return;
+      Navigator.pop(context);
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Row(
+            children: const [
+              Icon(Icons.check_circle, color: Colors.white, size: 20),
+              SizedBox(width: 12),
+              Text("Announcement posted successfully!"),
+            ],
+          ),
+          backgroundColor: const Color(0xff10b981),
+          behavior: SnackBarBehavior.floating,
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+          margin: const EdgeInsets.all(16),
         ),
-        backgroundColor: const Color(0xff10b981),
-        behavior: SnackBarBehavior.floating,
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-        margin: const EdgeInsets.all(16),
-      ),
-    );
+      );
+    } catch (e) {
+      debugPrint('Announcement post error: $e');
+      if (!mounted) return;
+      String errorMsg = e.toString().replaceFirst('Exception: ', '');
+      if (errorMsg.contains('PERMISSION_DENIED') || errorMsg.contains('permission-denied')) {
+        errorMsg = 'Permission denied. Please ensure Firestore rules allow '
+            'admins/teachers to write to the "announcements" collection.';
+      }
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text("Failed to post: $errorMsg"),
+          backgroundColor: Colors.red,
+          duration: const Duration(seconds: 5),
+        ),
+      );
+    } finally {
+      if (mounted) {
+        setState(() => _loading = false);
+      }
+    }
   }
 
   Color _getTypeColor(String type) {

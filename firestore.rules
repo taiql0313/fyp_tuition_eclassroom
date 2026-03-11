@@ -1,14 +1,5 @@
 rules_version = '2';
 
-service firebase.storage {
-  match /b/{bucket}/o {
-    match /{allPaths=**} {
-      allow read, write: if request.auth != null;
-    }
-  }
-}
-
-
 service cloud.firestore {
   match /databases/{database}/documents {
 
@@ -27,25 +18,15 @@ service cloud.firestore {
     
     // --- TIMETABLES COLLECTION ---
     match /timetables/{timetableId} {
-      // Allow all authenticated users to read (we'll filter in app)
       allow read: if request.auth != null;
-      
-      // Teachers can create timetables
       allow create: if request.auth != null;
-      
-      // Teachers and admins can update
       allow update: if request.auth != null;
-      
-      // Only admins can delete
       allow delete: if request.auth != null;
     }
 
     // --- TIME LOCKS COLLECTION ---
     match /timeLocks/{lockId} {
-      // Allow all authenticated users to read (needed for conflict detection)
       allow read: if request.auth != null;
-      
-      // Teachers can create/update/delete locks
       allow write: if request.auth != null;
     }
     
@@ -59,26 +40,21 @@ service cloud.firestore {
     match /assignments/{assignmentId} {
   		allow read: if request.auth != null;
   		allow create: if request.auth != null && isTeacher();
-  		// Simplified: Allow any teacher to update/delete assignments they own or any assignment in their class
   		allow update, delete: if request.auth != null && isTeacher();
     }
     
     // --- ASSIGNMENT SUBMISSIONS COLLECTION ---
     match /assignment_submissions/{submissionId} {
-      // Allow all authenticated users to read
       allow read: if request.auth != null;
       
-      // Students can create their own submissions
       allow create: if request.auth != null && isStudent() && 
         request.resource.data.studentId == request.auth.uid;
       
-      // Students can update their own submissions, teachers can update any
       allow update: if request.auth != null && (
         (isStudent() && resource.data.studentId == request.auth.uid) ||
         isTeacher()
       );
       
-      // Teachers can delete any submissions; students can delete their own
       allow delete: if request.auth != null && (
         isTeacher() ||
         (isStudent() && resource.data.studentId == request.auth.uid)
@@ -87,24 +63,16 @@ service cloud.firestore {
     
     // --- QUIZ SUBMISSIONS COLLECTION ---
     match /quiz_submissions/{submissionId} {
-      // Students can read their own submissions, teachers can read all
-      // 学生可以读取自己的提交，老师可以读取所有
       allow read: if request.auth != null;
       
-      // Students can create their own quiz submissions
-      // 学生可以创建自己的 Quiz 提交
       allow create: if request.auth != null && isStudent() && 
         request.resource.data.studentId == request.auth.uid;
       
-      // Students can update their own submissions (before grading), teachers can update any (for grading)
-      // 学生可以更新自己的提交（批改前），老师可以更新任何提交（用于批改）
       allow update: if request.auth != null && (
         (isStudent() && resource.data.studentId == request.auth.uid) ||
         isTeacher()
       );
       
-      // Only teachers can delete quiz submissions
-      // 只有老师可以删除 Quiz 提交
       allow delete: if request.auth != null && isTeacher();
     }
     
@@ -116,10 +84,8 @@ service cloud.firestore {
       allow delete: if request.auth != null && isAdmin();
     }
 
-    // --- REPLACEMENT CLASSES (one-time replacement class scheduling) ---
+    // --- REPLACEMENT CLASSES ---
     match /replacement_classes/{replacementId} {
-      // Teachers can read their own replacement classes; admins can read all;
-      // students can read replacement classes for classrooms they are enrolled in
       allow read: if request.auth != null &&
         (
           resource.data.teacherId == request.auth.uid ||
@@ -130,15 +96,12 @@ service cloud.firestore {
           )
         );
       
-      // Teachers can create replacement classes for their own classes
       allow create: if request.auth != null && isTeacher() && 
         request.resource.data.teacherId == request.auth.uid;
       
-      // Teachers can update their own (e.g., cancel); admins can update any
       allow update: if request.auth != null &&
         (resource.data.teacherId == request.auth.uid || isAdmin());
       
-      // Teachers can delete their own; admins can delete any
       allow delete: if request.auth != null &&
         (resource.data.teacherId == request.auth.uid || isAdmin());
     }
@@ -164,128 +127,102 @@ service cloud.firestore {
     // --- ANNOUNCEMENTS ---
     match /announcements/{id} {
       allow read: if request.auth != null;
-      // Teachers can post class announcements, admins can post system-wide
       allow write: if request.auth != null && (isTeacher() || isAdmin());
     }
 
-    // --- ATTENDANCE SESSIONS COLLECTION (NEW) ---
+    // --- ATTENDANCE SESSIONS COLLECTION ---
     match /attendance_sessions/{sessionId} {
-      // All authenticated users can read (students need to verify codes)
       allow read: if request.auth != null;
       
-      // Only teachers can create sessions, and must be the teacherId
       allow create: if request.auth != null && isTeacher() && 
         request.resource.data.teacherId == request.auth.uid;
       
-      // Teachers can update/delete their own sessions
       allow update, delete: if request.auth != null && isTeacher() && 
         resource.data.teacherId == request.auth.uid;
     }
 
-    // --- ATTENDANCE RECORDS COLLECTION (NEW) ---
+    // --- ATTENDANCE RECORDS COLLECTION ---
     match /attendance_records/{recordId} {
-      // All authenticated users can read
       allow read: if request.auth != null;
       
-      // Students can create their own attendance records (when checking in)
-      // Teachers can create records when ending sessions (marking absent students)
       allow create: if request.auth != null && 
         ((isStudent() && request.resource.data.studentId == request.auth.uid) ||
          (isTeacher()));
       
-      // Teachers and admins can update records (e.g., change status to excused when approving MC)
-      // Students can update their own records
       allow update: if request.auth != null && 
         (isTeacher() || isAdmin() || (isStudent() && resource.data.studentId == request.auth.uid));
       
-      // Teachers and admins can delete
       allow delete: if request.auth != null && (isTeacher() || isAdmin());
     }
 
-    // --- ABSENCE DOCUMENTS COLLECTION (NEW) ---
+    // --- ABSENCE DOCUMENTS COLLECTION ---
     match /absence_documents/{documentId} {
-      // All authenticated users can read
       allow read: if request.auth != null;
       
-      // Students can create their own absence documents
       allow create: if request.auth != null && isStudent() && 
         request.resource.data.studentId == request.auth.uid;
       
-      // Only admins can update (approve/reject) - changed from teachers
-      // Students can update their own documents (for corrections)
       allow update: if request.auth != null && 
         (isAdmin() || (isStudent() && resource.data.studentId == request.auth.uid));
       
-      // Admins and students can delete their own documents
       allow delete: if request.auth != null && 
         (isAdmin() || (isStudent() && resource.data.studentId == request.auth.uid));
     }
 
-    // --- ABSENCE DOCUMENT FILES COLLECTION (Files stored as base64 in Firestore) ---
+    // --- ABSENCE DOCUMENT FILES COLLECTION ---
     match /absence_document_files/{fileId} {
-      // All authenticated users can read (admins need to view files)
       allow read: if request.auth != null;
       
-      // Students can create their own files
       allow create: if request.auth != null && isStudent() && 
         request.resource.data.studentId == request.auth.uid;
       
-      // Only admins can delete files
-      // Students can delete their own files
       allow delete: if request.auth != null && 
         (isAdmin() || (isStudent() && resource.data.studentId == request.auth.uid));
       
-      // No updates allowed (files are immutable)
       allow update: if false;
     }
 
-    // --- ATTENDANCE (OLD STRUCTURE - KEEP FOR BACKWARD COMPATIBILITY) ---
+    // --- ATTENDANCE (OLD STRUCTURE - BACKWARD COMPATIBILITY) ---
     match /attendance/{classId}/records/{recordId} { 
       allow write: if request.auth != null
                         && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == "student";
       allow read: if request.auth != null;
     }
 
-    // --- CHAT MESSAGES (OLD STRUCTURE - KEEP THIS) ---
+    // --- CHAT MESSAGES (OLD STRUCTURE) ---
     match /chats/{chatId}/messages/{msgId} {
       allow read, write: if request.auth != null;
     }
 
-    // --- NEW SIMPLIFIED CHAT STRUCTURE (ADD THIS) ---
+    // --- CHAT STRUCTURE ---
     match /chats/{chatId} {
-      // Allow reading if user is student or teacher in this chat
       allow read: if request.auth != null && 
         (request.auth.uid == resource.data.studentId || 
          request.auth.uid == resource.data.teacherId);
       
-      // Allow creating if user is setting themselves as student or teacher
       allow create: if request.auth != null && 
         (request.auth.uid == request.resource.data.studentId || 
          request.auth.uid == request.resource.data.teacherId);
       
-      // Allow updating if user is student or teacher in this chat
       allow update: if request.auth != null && 
         (request.auth.uid == resource.data.studentId || 
          request.auth.uid == resource.data.teacherId);
     }
 
-    // --- NEW CHAT MESSAGES SUBCOLLECTION (ADD THIS) ---
+    // --- CHAT MESSAGES SUBCOLLECTION ---
     match /chats/{chatId}/messages/{messageId} {
-      // Allow reading if user can read the parent chat
       allow read: if request.auth != null && 
         (request.auth.uid == get(/databases/$(database)/documents/chats/$(chatId)).data.studentId || 
          request.auth.uid == get(/databases/$(database)/documents/chats/$(chatId)).data.teacherId);
       
-      // Allow creating messages (users can send messages)
       allow create: if request.auth != null;
       
-      // Allow updating only isRead field
       allow update: if request.auth != null && 
         request.resource.data.keys().hasOnly(["isRead"]) && 
         request.resource.data.isRead == true;
     }
 
-    // --- CHAT FILES (stored in Firestore as base64) ---
+    // --- CHAT FILES ---
     match /chat_files/{fileId} {
       allow read: if request.auth != null &&
         (
@@ -302,7 +239,7 @@ service cloud.firestore {
       allow update, delete: if request.auth != null && isAdmin();
     }
 
-    // --- OLD CHAT THREADS (KEEP THIS AS BACKUP) ---
+    // --- OLD CHAT THREADS (BACKUP) ---
     match /chatThreads/{threadId} {
       allow read: if request.auth != null &&
         (request.auth.uid == resource.data.studentId ||
@@ -324,51 +261,37 @@ service cloud.firestore {
       allow create: if request.auth != null;
     }
 
-    // --- FEES & PAYMENTS (OLD STRUCTURE - KEEP FOR BACKWARD COMPATIBILITY) ---
+    // --- FEES & PAYMENTS (OLD STRUCTURE - BACKWARD COMPATIBILITY) ---
     match /payments/{uid} {
       allow read, write: if request.auth != null
                         && request.auth.uid == uid;
     }
 
-    // --- INVOICES COLLECTION (NEW) ---
+    // --- INVOICES COLLECTION ---
     match /invoices/{invoiceId} {
-      // Students can read their own invoices
-      // Admins can read all invoices
       allow read: if request.auth != null &&
         (resource.data.studentId == request.auth.uid || isAdmin());
 
-      // Only system/admin can create invoices (via service)
       allow create: if request.auth != null && isAdmin();
 
-      // Students can update their own invoices (e.g., mark as paid after verification)
-      // Admins can update any invoices
       allow update: if request.auth != null &&
         (
-          // Existing document or new data has matching studentId
           (resource.data.studentId == request.auth.uid) ||
           (request.resource.data.studentId == request.auth.uid) ||
           isAdmin()
         );
 
-      // Only admins can delete
       allow delete: if request.auth != null && isAdmin();
     }
 
-    // --- PAYMENT TRANSACTIONS COLLECTION (NEW) ---
+    // --- PAYMENT TRANSACTIONS COLLECTION ---
     match /payment_transactions/{transactionId} {
-      // Students can read their own transactions
-      // Admins can read all transactions
       allow read: if request.auth != null &&
         (resource.data.studentId == request.auth.uid || isAdmin());
 
-      // Students can create transactions (when initiating payment)
-      // Check: studentId in the transaction must match the authenticated user
-      // Admins can create transactions (manual payments)
       allow create: if request.auth != null &&
         (request.resource.data.studentId == request.auth.uid || isAdmin());
 
-      // Students can update their own transactions (e.g., to add PayPal order ID)
-      // Admins can update any transactions
       allow update: if request.auth != null &&
         (
           (resource.data.studentId == request.auth.uid) ||
@@ -376,74 +299,51 @@ service cloud.firestore {
           isAdmin()
         );
 
-      // Only admins can delete
       allow delete: if request.auth != null && isAdmin();
     }
 
-    // --- PAYMENT REMINDERS COLLECTION (NEW) ---
+    // --- PAYMENT REMINDERS COLLECTION ---
     match /payment_reminders/{reminderId} {
-      // Students can read their own reminders
-      // Admins can read all reminders (check admin status once)
       allow read: if request.auth != null &&
         (resource.data.studentId == request.auth.uid || isAdmin());
 
-      // Allow listing all reminders for admins (needed for StreamBuilder)
-      // This is checked at query level, so admins can query all reminders
       allow list: if request.auth != null && isAdmin();
 
-      // Only system/admin can create reminders
       allow create: if request.auth != null && isAdmin();
 
-      // Only admins can update/delete
       allow update, delete: if request.auth != null && isAdmin();
     }
 
     // --- SUBJECTS COLLECTION ---
     match /subjects/{subjectId} {
-      // All authenticated users can read active subjects
       allow read: if request.auth != null;
-
-      // Only admins can create subjects
       allow create: if request.auth != null && isAdmin();
-
-      // Only admins can update/delete subjects
       allow update, delete: if request.auth != null && isAdmin();
     }
 
     // --- NOTIFICATIONS COLLECTION ---
     match /notifications/{notificationId} {
-      // Users can read their own notifications
-      // Admins can read all notifications
       allow read: if request.auth != null &&
         (resource.data.userId == request.auth.uid || isAdmin());
 
-      // Admins and teachers can create notifications for any user (e.g. payment, announcement, quiz)
-      // Users can create their own notifications
       allow create: if request.auth != null &&
         (request.resource.data.userId == request.auth.uid || isAdmin() || isTeacher());
 
-      // Users can update their own notifications (mark as read)
-      // Admins can update any notifications
       allow update: if request.auth != null &&
         (resource.data.userId == request.auth.uid || isAdmin());
 
-      // Only admins can delete notifications
       allow delete: if request.auth != null && isAdmin();
     }
 
     // --- SYSTEM LOGS COLLECTION ---
     match /system_logs/{logId} {
-      // Admins can read all logs
       allow read, list: if request.auth != null && isAdmin();
 
-      // Any authenticated user can create a log entry
-      // Allow unauthenticated failed login attempts for audit
       allow create: if request.auth != null ||
         (request.auth == null &&
          request.resource.data.category == 'Authentication & Access' &&
          request.resource.data.action == 'Failed Login Attempt');
 
-      // Only admins can update/delete logs
       allow update, delete: if request.auth != null && isAdmin();
     }
 

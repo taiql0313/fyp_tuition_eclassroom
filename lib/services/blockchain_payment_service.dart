@@ -17,7 +17,7 @@ class BlockchainPaymentService {
 
   // The tuition center's receiving wallet (first Ganache account by default)
   static const String receiverAddress =
-      '0x9e101E2edBE86e75BE25F9B4222f4e1Ac4B6707C';
+      '0x672a1361F746dEF308D408062da1e636a867887e';
 
   static const double _myrToEthRate = 0.00013;
 

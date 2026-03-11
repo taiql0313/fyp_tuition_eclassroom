@@ -13,6 +13,7 @@ import '../admin/timetable_approval_page.dart';
 import '../admin/absence_approval_page.dart';
 import '../admin/subject_management_page.dart';
 import '../admin/payment_management_page.dart';
+import '../teacher/create_announcement_page.dart';
 
 class AdminDashboard extends StatelessWidget {
   const AdminDashboard({super.key});
@@ -79,25 +80,22 @@ class AdminDashboard extends StatelessWidget {
                     ),
                     Row(
                       children: [
-                        Stack(
-                          children: [
-                            IconButton(
-                              icon: const Icon(Icons.notifications_none, color: Colors.white),
-                              onPressed: () {},
-                            ),
-                            Positioned(
-                              right: 8,
-                              top: 8,
-                              child: Container(
-                                width: 8,
-                                height: 8,
-                                decoration: const BoxDecoration(
-                                  color: Colors.red,
-                                  shape: BoxShape.circle,
-                                ),
+                        IconButton(
+                          icon: const Icon(Icons.campaign_outlined, color: Colors.white),
+                          tooltip: "Post Announcement to All Students",
+                          onPressed: () {
+                            Navigator.push(
+                              context,
+                              MaterialPageRoute(
+                                builder: (_) => const CreateAnnouncementPage(),
                               ),
-                            ),
-                          ],
+                            );
+                          },
+                        ),
+                        const SizedBox(width: 4),
+                        IconButton(
+                          icon: const Icon(Icons.notifications_none, color: Colors.white),
+                          onPressed: () {},
                         ),
                         PopupMenuButton<String>(
                           icon: const Icon(Icons.more_vert, color: Colors.white),

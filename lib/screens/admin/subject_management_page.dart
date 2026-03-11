@@ -273,18 +273,45 @@ class _SubjectManagementPageState extends State<SubjectManagementPage> {
                           children: [
                             IconButton(
                               icon: const Icon(Icons.edit, color: Colors.blue),
-                              onPressed: subject.isActive
-                                  ? () => _showEditDialog(subject)
-                                  : null,
+                              onPressed: () => _showEditDialog(subject),
                               tooltip: "Edit",
                             ),
-                            IconButton(
-                              icon: const Icon(Icons.delete, color: Colors.red),
-                              onPressed: subject.isActive
-                                  ? () => _deleteSubject(subject)
-                                  : null,
-                              tooltip: "Delete",
-                            ),
+                            if (subject.isActive)
+                              IconButton(
+                                icon: const Icon(Icons.block, color: Colors.red),
+                                onPressed: () => _deleteSubject(subject),
+                                tooltip: "Mark Inactive",
+                              )
+                            else
+                              IconButton(
+                                icon: const Icon(Icons.refresh, color: Colors.green),
+                                onPressed: () async {
+                                  try {
+                                    await _subjectService.updateSubject(
+                                      subjectId: subject.id,
+                                      isActive: true,
+                                    );
+                                    if (context.mounted) {
+                                      ScaffoldMessenger.of(context).showSnackBar(
+                                        SnackBar(
+                                          content: Text("'${subject.name}' reactivated successfully"),
+                                          backgroundColor: Colors.green,
+                                        ),
+                                      );
+                                    }
+                                  } catch (e) {
+                                    if (context.mounted) {
+                                      ScaffoldMessenger.of(context).showSnackBar(
+                                        SnackBar(
+                                          content: Text("Error: ${e.toString()}"),
+                                          backgroundColor: Colors.red,
+                                        ),
+                                      );
+                                    }
+                                  }
+                                },
+                                tooltip: "Activate",
+                              ),
                           ],
                         ),
                       ),
