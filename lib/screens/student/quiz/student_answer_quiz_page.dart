@@ -151,7 +151,7 @@ class _StudentAnswerQuizPageState extends State<StudentAnswerQuizPage> {
     setState(() => _isSubmitting = true);
 
     try {
-      // Auto-grade MCQ questions / 自动评分 MCQ 题目
+      // Auto-grade MCQ questions
       final List<Map<String, dynamic>> gradedAnswers = [];
       int totalScore = 0;
       int maxTotalScore = 0;
@@ -159,11 +159,11 @@ class _StudentAnswerQuizPageState extends State<StudentAnswerQuizPage> {
       int mcqTotal = 0;
       int shortAnswerTotal = 0;
       
-      // Get quiz context for grading / 获取测验上下文用于评分
+      // Get quiz context for grading
       final quizTitle = widget.quizData['title'] ?? 'Untitled Quiz';
       final subject = widget.quizData['subject'] as String?;
       
-      // First, grade all MCQ questions / 首先，评分所有 MCQ 题目
+      // First, grade all MCQ questions
       for (int i = 0; i < questions.length; i++) {
         final question = questions[i] as Map<String, dynamic>;
         final questionType = question['type'] as String? ?? 'MCQ';
@@ -171,10 +171,10 @@ class _StudentAnswerQuizPageState extends State<StudentAnswerQuizPage> {
         
         if (questionType == 'MCQ') {
           // MCQ: Auto-grade by comparing with correct answer
-          // MCQ：对比正确答案自动评分
+          // Auto-grade by comparing with correct answer
           final correctAnswer = question['correctAnswer'] as int?;
           final isCorrect = studentAnswer == correctAnswer;
-          final score = isCorrect ? 1 : 0; // 1 mark per MCQ / 每题 1 分
+          final score = isCorrect ? 1 : 0; // 1 mark per MCQ
           
           gradedAnswers.add({
             'questionIndex': i,
@@ -193,8 +193,8 @@ class _StudentAnswerQuizPageState extends State<StudentAnswerQuizPage> {
         }
       }
       
-      // Then, grade Short Answer questions with AI (Option A - user waits) / 然后，使用 AI 评分简答题（选项 A - 用户等待）
-      final shortAnswerMaxScore = QuizGradingService.getShortAnswerMaxScore(); // 2 marks / 2 分
+      // Then, grade Short Answer questions with AI (Option A - user waits)
+      final shortAnswerMaxScore = QuizGradingService.getShortAnswerMaxScore(); // 2 marks
       
       for (int i = 0; i < questions.length; i++) {
         final question = questions[i] as Map<String, dynamic>;
@@ -212,7 +212,7 @@ class _StudentAnswerQuizPageState extends State<StudentAnswerQuizPage> {
             );
           }
           
-          // Call AI grading service / 调用 AI 评分服务
+          // Call AI grading service
           final gradingResult = await _gradingService.gradeShortAnswer(
             question: question['question'] ?? '',
             studentAnswer: studentAnswer?.toString() ?? '',
@@ -231,9 +231,9 @@ class _StudentAnswerQuizPageState extends State<StudentAnswerQuizPage> {
             'studentAnswer': studentAnswer?.toString() ?? '',
             'sampleAnswer': question['sampleAnswer'] ?? '',
             'score': status == 'graded' ? shortAnswerScore : null,
-            'maxScore': shortAnswerMaxScore, // 2 marks / 2 分
+            'maxScore': shortAnswerMaxScore, // 2 marks
             'status': status,
-            'aiFeedback': aiFeedback, // AI feedback / AI 反馈
+            'aiFeedback': aiFeedback, // AI feedback
           });
           
           if (status == 'graded') {
@@ -261,7 +261,7 @@ class _StudentAnswerQuizPageState extends State<StudentAnswerQuizPage> {
         'answers': gradedAnswers,
         'totalScore': totalScore,
         'maxTotalScore': maxTotalScore,
-        'mcqScore': mcqCorrect,   // 1 mark per MCQ / 每题 1 分
+        'mcqScore': mcqCorrect,   // 1 mark per MCQ
         'mcqMaxScore': mcqTotal,
         'mcqCorrect': mcqCorrect,
         'mcqTotal': mcqTotal,
@@ -299,7 +299,7 @@ class _StudentAnswerQuizPageState extends State<StudentAnswerQuizPage> {
           _submissionData = submissionData;
         });
         
-        // Show score summary / 显示分数摘要
+        // Show score summary
         String message = "Quiz submitted successfully! 🎉";
         if (mcqTotal > 0) {
           message += "\nMCQ Score: $mcqCorrect/$mcqTotal correct";

@@ -39,7 +39,7 @@ class _CreateAssignmentPageState extends State<CreateAssignmentPage> {
   // Maximum file size: 700KB (716,800 bytes)
   static const int _maxFileSize = 716 * 1024; // 700KB
 
-  // --- FUNCTION: SELECT DATE / 选择日期 ---
+  // --- FUNCTION: SELECT DATE ---
   Future<void> _pickDate() async {
     DateTime? picked = await showDatePicker(
       context: context,
@@ -90,7 +90,7 @@ class _CreateAssignmentPageState extends State<CreateAssignmentPage> {
     return base64Encode(bytes);
   }
 
-  // --- FUNCTION: UPLOAD ASSIGNMENT / 上传作业 ---
+  // --- FUNCTION: UPLOAD ASSIGNMENT ---
   Future<void> _uploadAssignment() async {
     if (_titleController.text.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Title is empty")));

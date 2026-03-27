@@ -287,7 +287,7 @@ class _TeacherAssignmentDetailPageState extends State<TeacherAssignmentDetailPag
             Colors.red,
           ),
           const Divider(height: 30),
-          // Fetch teacher name from classroom / 从课堂获取教师姓名
+          // Fetch teacher name from classroom
           FutureBuilder<DocumentSnapshot>(
             future: classId.isNotEmpty
                 ? FirebaseFirestore.instance.collection('classrooms').doc(classId).get()
@@ -589,8 +589,8 @@ class _TeacherAssignmentDetailPageState extends State<TeacherAssignmentDetailPag
     return Builder(
       builder: (context) => InkWell(
         onTap: () async {
-          // For students: Download file / 学生：下载文件
-          // For teachers: Copy URL / 教师：复制URL
+          // For students: Download file
+          // For teachers: Copy URL
           if (_isTeacher) {
             await Clipboard.setData(ClipboardData(text: fileUrl));
             ScaffoldMessenger.of(context).showSnackBar(
@@ -642,7 +642,7 @@ class _TeacherAssignmentDetailPageState extends State<TeacherAssignmentDetailPag
                         ),
                       );
                     } else {
-                      // TODO: Download file / 待实现：下载文件
+                      // TODO: Download file
                       ScaffoldMessenger.of(ctx).showSnackBar(
                         const SnackBar(
                           content: Text("Download functionality coming soon"),
@@ -779,9 +779,9 @@ class _TeacherAssignmentDetailPageState extends State<TeacherAssignmentDetailPag
   }
 
   Widget _buildBottomActions(BuildContext context) {
-    // Different actions for teachers vs students / 教师和学生不同的操作
+    // Different actions for teachers vs students
     if (_isTeacher) {
-      // Teacher actions: View Submissions & Edit / 教师操作：查看提交和编辑
+      // Teacher actions: View Submissions & Edit
       return Container(
         padding: const EdgeInsets.all(20),
         decoration: const BoxDecoration(color: Colors.white, border: Border(top: BorderSide(color: Colors.black12))),

@@ -412,7 +412,7 @@ class _SubjectDetailPageState extends State<SubjectDetailPage> {
             _buildPeopleTab(),
           ],
         ),
-        // Only show + button for teachers / 只为教师显示 + 按钮
+        // Only show + button for teachers
         floatingActionButton: _isTeacher
             ? FloatingActionButton(
                 onPressed: () => _showPostOptions(context),

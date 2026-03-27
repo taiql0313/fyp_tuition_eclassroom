@@ -38,7 +38,7 @@ class StudentQuizResultPage extends StatelessWidget {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            // Score Card / 分数卡片
+    // Score Card
             _buildScoreCard(
               quizTitle: quizTitle,
               totalScore: totalScore,

@@ -27,7 +27,7 @@ class QuizGradingService {
       subject: subject,
     );
 
-    // Retry logic / 重试逻辑
+    // Retry logic
     for (int attempt = 0; attempt <= _maxRetries; attempt++) {
       try {
         final result = await _callGroqAPI(contextPrompt);
@@ -42,7 +42,7 @@ class QuizGradingService {
       } catch (e) {
         print('QuizGradingService: Attempt ${attempt + 1} failed: $e');
         
-        // If last attempt, return pending_grading / 如果是最后一次尝试，返回待评分
+        // If last attempt, return pending_grading
         if (attempt == _maxRetries) {
           return {
             'score': null,
@@ -51,12 +51,12 @@ class QuizGradingService {
           };
         }
         
-        // Wait before retry (exponential backoff) / 重试前等待（指数退避）
+        // Wait before retry (exponential backoff)
         await Future.delayed(Duration(seconds: attempt + 1));
       }
     }
 
-    // Fallback to pending_grading / 回退到待评分
+    // Fallback to pending_grading
     return {
       'score': null,
       'feedback': null,
@@ -64,7 +64,7 @@ class QuizGradingService {
     };
   }
 
-  /// Build the prompt for Groq API / 构建 Groq API 的提示
+  /// Build the prompt for Groq API
   String _buildGradingPrompt({
     required String question,
     required String studentAnswer,
@@ -106,7 +106,7 @@ Respond in JSON format only:
 }''';
   }
 
-  /// Call Groq API / 调用 Groq API
+  /// Call Groq API
   Future<Map<String, dynamic>?> _callGroqAPI(String prompt) async {
     try {
       final response = await http.post(
@@ -127,19 +127,19 @@ Respond in JSON format only:
               "content": prompt
             }
           ],
-          "temperature": 0.3, // Lower temperature for more consistent grading / 较低温度以获得更一致的评分
+          "temperature": 0.3, // Lower temperature for more consistent grading
         }),
       ).timeout(
-        const Duration(seconds: 30), // 30 second timeout / 30 秒超时
+        const Duration(seconds: 30), // 30 second timeout
       );
 
       if (response.statusCode == 200) {
         final data = jsonDecode(response.body);
         final content = data['choices'][0]['message']['content'] as String;
         
-        // Parse JSON from response / 从响应中解析 JSON
+        // Parse JSON from response
         try {
-          // Sometimes the response might have markdown code blocks / 有时响应可能包含 markdown 代码块
+          // Sometimes the response might have markdown code blocks
           String cleanedContent = content.trim();
           if (cleanedContent.startsWith('```json')) {
             cleanedContent = cleanedContent.replaceFirst('```json', '').replaceFirst('```', '').trim();
@@ -149,7 +149,7 @@ Respond in JSON format only:
           
           final result = jsonDecode(cleanedContent) as Map<String, dynamic>;
           
-          // Validate and normalize score / 验证并规范化分数
+          // Validate and normalize score
           int score = (result['score'] as num?)?.toInt() ?? 0;
           if (score < 0) score = 0;
           if (score > _shortAnswerMaxScore) score = _shortAnswerMaxScore;
@@ -175,6 +175,6 @@ Respond in JSON format only:
     }
   }
 
-  /// Get max score for short answer / 获取简答题的满分
+  /// Get max score for short answer
   static int getShortAnswerMaxScore() => _shortAnswerMaxScore;
 }
