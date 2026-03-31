@@ -2,7 +2,7 @@
 class ApiConfig {
   // Groq API Key - Used for both Chatbot and Quiz Grading
   // For production, move this to environment variables
-  static const String groqApiKey = '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';
+  static const String groqApiKey = '';
   
   static const String groqApiUrl = 'https://api.groq.com/openai/v1/chat/completions';
   
