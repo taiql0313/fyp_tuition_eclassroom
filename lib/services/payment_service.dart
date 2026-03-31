@@ -22,7 +22,7 @@ class PaymentService {
 
   // PayPal Sandbox credentials
   static const String paypalClientId = 'AaTDyCy-DX6Q8TyXj8yK-rM6eGxd992oFKZQZ0_CDrhc6q-m-MriUg2rv8XDOt0NMeCgPhQU4HTNxkrj';
-  static const String paypalSecret = 'ELmzhCaz7ddMoTc2j2swvfuTlfZ3K66D7y4eyePGUZCw__rO2zWXdkzHkozSZjawemnwkzCPnd_vr3cd';
+  static const String paypalSecret = '';
   static const String paypalBaseUrl = 'https://api.sandbox.paypal.com'; // Sandbox URL
   static const double _myrToUsdRate = 0.21; // Update as needed (approx 1 MYR -> USD)
 
